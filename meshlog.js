@@ -1046,6 +1046,11 @@ class MeshLog {
         radiusSlider.onchange = (e) => {
             this.settings.routeRadius = parseInt(e.target.value);
             console.log(`Route radius set to: ${this.settings.routeRadius}km`);
+            
+            // Clear all existing paths so they can be redrawn with new radius
+            Object.keys(this.map_layers).forEach(pathId => {
+                this.hidePath(pathId);
+            });
         };
         let radiusValue = document.createElement('span');
         radiusValue.innerText = '100km';
