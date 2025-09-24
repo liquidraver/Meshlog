@@ -14,6 +14,8 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
 
+   public $pdo;
+
     function __construct($pdo) {
         $this->pdo = $pdo;
     }
@@ -147,10 +149,11 @@ class MeshLog {
 
     // TODO
     private function insertSelfReport($data, $reporter) {
-        if (!$reporter) return;
+        if (!$reporter) return null;
         $lat = $data['contact']['lat'] ?? null;
         $lon = $data['contact']['lon'] ?? null;
         $reporter->updateLocation($this, $lat, $lon);
+	return null;
     }
 
     private function repError($msg) {

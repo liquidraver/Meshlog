@@ -62,12 +62,12 @@ class MeshLogContact extends MeshLogObject {
 
         // Works only for repeaters and ADV messages
         if (this.isRepeater() || this.isRoom()) {
-        Object.entries(this._meshlog.messages).forEach(([_,grp]) => {
-            Object.entries(grp.messages).forEach(([_,msg]) => {
-                if (!(msg instanceof MeshLogAdvertisement)) return;
+            Object.entries(this._meshlog.messages).forEach(([_,grp]) => {
+                Object.entries(grp.messages).forEach(([_,msg]) => {
+                    if (!(msg instanceof MeshLogAdvertisement)) return;
 
 
-                if (msg.isExpired()) return;
+                    if (msg.isExpired()) return;
 
                     let path = msg.data.path;
                     let parts = path.split(",");
@@ -136,63 +136,20 @@ class MeshLogContact extends MeshLogObject {
         const ln_outline = 4;
         const ln_offset = 3;
 
-        // Distance calculation function (same as in showPath)
-        const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm) => {
-            const latDiff = Math.abs(lat1 - lat2);
-            const lonDiff = Math.abs(lon1 - lon2);
-            // Rough conversion: 1 degree ≈ 111km
-            const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-            return distanceKm <= radiusKm;
-        };
-
         Object.entries(links).forEach(([hash,dir]) => {
-            // Find all contacts with this hash (handles colliding IDs)
-            let candidates = [];
-            Object.entries(this._meshlog.contacts).forEach(([k,v]) => {
-                if (v.hash === hash && v.adv && !v.adv.isVeryExpired()) {
-                    candidates.push(v);
-                }
-            });
-
-            let dst;
-            
-            // If only one candidate, use it directly (no collision, no filtering needed)
-            if (candidates.length === 1) {
-                dst = [candidates[0].adv.data.lat, candidates[0].adv.data.lon];
-            } else if (candidates.length > 1) {
-                // Multiple candidates - apply distance filtering for collision resolution
-                let nearbyCandidates = candidates.filter(candidate => {
-                    let candidateCoords = [candidate.adv.data.lat, candidate.adv.data.lon];
-                    if (_nocoord(candidateCoords)) return false;
-                    
-                    // Use Route Radius setting for neighbor filtering
-                    return isWithinRadius(src[0], src[1], candidateCoords[0], candidateCoords[1], this._meshlog.settings.routeRadius);
-                });
-
-                // If no nearby candidates, skip this connection
-                if (nearbyCandidates.length === 0) return;
-
-                // Use the closest candidate if multiple are nearby
-                let closestCandidate = nearbyCandidates[0];
-                if (nearbyCandidates.length > 1) {
-                    let minDistance = Infinity;
-                    nearbyCandidates.forEach(candidate => {
-                        let candidateCoords = [candidate.adv.data.lat, candidate.adv.data.lon];
-                        const latDiff = Math.abs(src[0] - candidateCoords[0]);
-                        const lonDiff = Math.abs(src[1] - candidateCoords[1]);
-                        const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-                        if (distanceKm < minDistance) {
-                            minDistance = distanceKm;
-                            closestCandidate = candidate;
-                        }
-                    });
-                }
-
-                dst = [closestCandidate.adv.data.lat, closestCandidate.adv.data.lon];
-            } else {
-                // No candidates found, skip this connection
-                return;
+            let dst = this._meshlog.findContactByHash(hash);
+            if (!dst) {
+                console.log(`contact not found: ${dst}`)
+                return
             }
+
+            if (!dst.adv) {
+                console.log(`contact ADV not found: ${dst}`)
+                return
+            }
+            dst = [dst.adv.data.lat, dst.adv.data.lon];
+
+            if (_nocoord(dst)) return;
 
             // Red is incoming
             if (dir.in) {
@@ -755,20 +712,8 @@ class MeshLogMessageGroup extends MeshLogObject {
         let msg = this.first();
         if (!msg) return;
 
-        // Display timestamp as-is (server is already in CEST/UTC+2)
         this.dom.date.innerText = msg.data.sent_at;
-        
-        // Add channel name prefix for channel messages
-        let displayName = msg.data.name;
-        if (msg instanceof MeshLogChannelMessage) {
-            // Map channel_id to channel name
-            if (msg.data.channel_id === 1) {
-                displayName = "(Public) " + msg.data.name;
-            } else if (msg.data.channel_id === 2) {
-                displayName = "(Hungary) " + msg.data.name;
-            }
-        }
-        this.dom.name.innerText = displayName + ": ";
+        this.dom.name.innerText = msg.data.name + ": ";
 
         const sz = this.size();
         this.dom.count.innerText = `×${sz}`;
@@ -863,8 +808,7 @@ class MeshLog {
             },
             contacts: {
 
-            },
-            routeRadius: 100 // Default 100km radius
+            }
         }
 
         this.dom_settings_types = document.getElementById(stypesid);
@@ -1031,45 +975,17 @@ class MeshLog {
             )
         );
 
-        // Add radius slider
-        let radiusContainer = document.createElement('div');
-        radiusContainer.classList.add('settings-cb');
-        let radiusLabel = document.createElement('label');
-        radiusLabel.innerText = 'Route Radius: ';
-        let radiusSlider = document.createElement('input');
-        radiusSlider.type = 'range';
-        radiusSlider.min = '5';
-        radiusSlider.max = '300';
-        radiusSlider.value = '100';
-        radiusSlider.step = '5';
-        radiusSlider.style.width = '150px';
-        radiusSlider.onchange = (e) => {
-            this.settings.routeRadius = parseInt(e.target.value);
-            console.log(`Route radius set to: ${this.settings.routeRadius}km`);
-        };
-        let radiusValue = document.createElement('span');
-        radiusValue.innerText = '100km';
-        radiusValue.style.marginLeft = '10px';
-        radiusSlider.oninput = (e) => {
-            radiusValue.innerText = e.target.value + 'km';
-        };
-        radiusContainer.appendChild(radiusLabel);
-        radiusContainer.appendChild(radiusSlider);
-        radiusContainer.appendChild(radiusValue);
-        this.dom_settings_types.appendChild(radiusContainer);
-
-        // Goat icon removed - was non-functional notification toggle
-        // this.settings.notifications = false;
-        // this.dom_settings_types.append(
-        //     this.__createCb(
-        //         "🐐",
-        //         "",
-        //         this.settings.notifications,
-        //         (e) => {
-        //             this.settings.notifications = e.target.checked;
-        //         }
-        //     )
-        // );
+        this.settings.notifications = false;
+        this.dom_settings_types.append(
+            this.__createCb(
+                "🐐",
+                "",
+                this.settings.notifications,
+                (e) => {
+                    this.settings.notifications = e.target.checked;
+                }
+            )
+        );
     }
 
     __init_reporters() {
@@ -1291,21 +1207,17 @@ class MeshLog {
 
             let hashstr = contact.data.public_key.substr(0,2);
 
-            // Mark dupes - only include repeaters (type 2) in collision detection
-            const isRepeater = contact.adv && contact.adv.data.type == 2;
-            
-            if (isRepeater) {
-                if (hashes.hasOwnProperty(hashstr)) {
-                    for (let i=0;i<hashes[hashstr].length;i++) {
-                        hashes[hashstr][i].flags.dupe = true;
-                        hashes[hashstr][i].updateDom();
-                    }
-                    contact.flags.dupe = true;
-                } else {
-                    hashes[hashstr] = [];
+            // Mark dupes
+            if (hashes.hasOwnProperty(hashstr)) {
+                for (let i=0;i<hashes[hashstr].length;i++) {
+                    hashes[hashstr][i].flags.dupe = true;
+                    hashes[hashstr][i].updateDom();
                 }
-                hashes[hashstr].push(contact);
+                contact.flags.dupe = true;
+            } else {
+                hashes[hashstr] = [];
             }
+            hashes[hashstr].push(contact);
 
             contact.createDom(this.dom_contacts);
             contact.addToMap(this.map);
@@ -1433,15 +1345,6 @@ class MeshLog {
         let last = [];
         let hashes = path ? path.split(',') : [];
 
-        // Distance calculation function using simple bounding box
-        const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm) => {
-            const latDiff = Math.abs(lat1 - lat2);
-            const lonDiff = Math.abs(lon1 - lon2);
-            // Rough conversion: 1 degree ≈ 111km
-            const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-            return distanceKm <= radiusKm;
-        };
-
 
         Object.entries(this.contacts).forEach(([k,v]) => {
             if (v.data.public_key == dst.data.public_key) {
@@ -1455,39 +1358,16 @@ class MeshLog {
 
         if (!src || (src.adv && src.isClient())) {
             if (hashes.length > 0) {
-                // Collect all repeaters with the first hash
-                let candidates = [];
                 Object.entries(this.contacts).forEach(([k,v]) => {
-                    if (v.hash == hashes[0] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
-                        candidates.push(v);
+                    if (v.hash == hashes[0] && v.adv && !v.adv.isVeryExpired()) {
+                        last.push([v.adv.data.lat, v.adv.data.lon]);
+                        if (v.marker) {
+                            this.visible_markers.push(v.marker);
+                            this.map.removeLayer(v.marker);
+                            v.marker.addTo(this.map);
+                        }
                     }
                 });
-                
-                // If only one candidate, use it directly (no collision, no filtering needed)
-                if (candidates.length === 1) {
-                    let v = candidates[0];
-                    last.push([v.adv.data.lat, v.adv.data.lon]);
-                    if (v.marker) {
-                        this.visible_markers.push(v.marker);
-                        this.map.removeLayer(v.marker);
-                        v.marker.addTo(this.map);
-                    }
-                } else if (candidates.length > 1) {
-                    // Multiple candidates - use radius for collision resolution
-                    Object.entries(this.contacts).forEach(([k,v]) => {
-                        if (v.hash == hashes[0] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
-                            // Check if within radius of source
-                            if (src && src.adv && isWithinRadius(src.adv.data.lat, src.adv.data.lon, v.adv.data.lat, v.adv.data.lon, this.settings.routeRadius)) {
-                                last.push([v.adv.data.lat, v.adv.data.lon]);
-                                if (v.marker) {
-                                    this.visible_markers.push(v.marker);
-                                    this.map.removeLayer(v.marker);
-                                    v.marker.addTo(this.map);
-                                }
-                            }
-                        }
-                    });
-                }
             }
 
             for (let i=0;i<last.length;i++) {
@@ -1515,134 +1395,44 @@ class MeshLog {
 
         for (let i=0;i<hashes.length;i++) {
             let next = [];
-            let foundNearby = false;
-            
-            // Collect all repeaters with this hash
-            let candidates = [];
             Object.entries(this.contacts).forEach(([k,v]) => {
-                if (v.hash == hashes[i] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
-                    candidates.push(v);
+                if (v.hash == hashes[i] && v.adv && !v.adv.isVeryExpired()) {
+                    if (v.marker) {
+                        this.visible_markers.push(v.marker);
+                        this.map.removeLayer(v.marker);
+                        v.marker.addTo(this.map);
+                    }
+                    let current = [v.adv.data.lat, v.adv.data.lon];
+                    for (let j=0;j<last.length;j++) {
+                        let pair_id = `${last[j][0]}-${last[j][1]}_${current[0]}-${current[1]}`;
+                        if (!this.link_pairs.hasOwnProperty(pair_id)) {
+                            this.link_pairs[pair_id] = 0;
+                        }
+
+                        let offset = Math.floor((this.link_pairs[pair_id] + 1) / 2) * ln_offset;
+                        if (offset > ln_max_offets) offset = 0;
+                        offset *= this.link_pairs[pair_id] % 2 == 0 ? 1 : -1;
+
+
+                        this.link_pairs[pair_id]++;
+
+                        layers.push(L.polyline([
+                            last[j],
+                            current
+                        ], {color: 'white', weight: ln_outline, offset: offset}));
+
+                        layers.push(L.polyline([
+                            last[j],
+                            current
+                        ], {color: color, weight: ln_weight, offset: offset}));
+                    }
+
+                    // Next branches
+                    if (current) {
+                        next.push(current);
+                    }
                 }
             });
-            
-            // If only one candidate, use it directly (no collision, no filtering needed)
-            if (candidates.length === 1) {
-                let v = candidates[0];
-                if (v.marker) {
-                    this.visible_markers.push(v.marker);
-                    this.map.removeLayer(v.marker);
-                    v.marker.addTo(this.map);
-                }
-                let current = [v.adv.data.lat, v.adv.data.lon];
-                for (let j=0;j<last.length;j++) {
-                    let pair_id = `${last[j][0]}-${last[j][1]}_${current[0]}-${current[1]}`;
-                    if (!this.link_pairs.hasOwnProperty(pair_id)) {
-                        this.link_pairs[pair_id] = 0;
-                    }
-
-                    let offset = Math.floor((this.link_pairs[pair_id] + 1) / 2) * ln_offset;
-                    if (offset > ln_max_offets) offset = 0;
-                    offset *= this.link_pairs[pair_id] % 2 == 0 ? 1 : -1;
-
-                    this.link_pairs[pair_id]++;
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: 'white', weight: ln_outline, offset: offset}));
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: color, weight: ln_weight, offset: offset}));
-                }
-
-                // Next branches
-                if (current) {
-                    next.push(current);
-                }
-                foundNearby = true;
-            } else if (candidates.length > 1) {
-                // Multiple candidates - use radius for collision resolution
-                let nearbyCandidates = [];
-                Object.entries(this.contacts).forEach(([k,v]) => {
-                    if (v.hash == hashes[i] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
-                        // Check if within radius of any previous node
-                        let withinRadius = false;
-                        for (let j=0;j<last.length;j++) {
-                            if (isWithinRadius(last[j][0], last[j][1], v.adv.data.lat, v.adv.data.lon, this.settings.routeRadius)) {
-                                withinRadius = true;
-                                break;
-                            }
-                        }
-                        
-                        if (withinRadius) {
-                            nearbyCandidates.push(v);
-                        }
-                    }
-                });
-
-                // If no nearby candidates, skip this hop
-                if (nearbyCandidates.length === 0) return;
-
-                // Use the closest candidate if multiple are nearby (fallback)
-                let closestCandidate = nearbyCandidates[0];
-                if (nearbyCandidates.length > 1) {
-                    let minDistance = Infinity;
-                    nearbyCandidates.forEach(candidate => {
-                        // Calculate distance to the closest previous node
-                        let minDistToPrev = Infinity;
-                        for (let j=0;j<last.length;j++) {
-                            const latDiff = Math.abs(last[j][0] - candidate.adv.data.lat);
-                            const lonDiff = Math.abs(last[j][1] - candidate.adv.data.lon);
-                            const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-                            if (distanceKm < minDistToPrev) {
-                                minDistToPrev = distanceKm;
-                            }
-                        }
-                        if (minDistToPrev < minDistance) {
-                            minDistance = minDistToPrev;
-                            closestCandidate = candidate;
-                        }
-                    });
-                }
-
-                // Draw lines to the closest candidate
-                if (closestCandidate.marker) {
-                    this.visible_markers.push(closestCandidate.marker);
-                    this.map.removeLayer(closestCandidate.marker);
-                    closestCandidate.marker.addTo(this.map);
-                }
-                let current = [closestCandidate.adv.data.lat, closestCandidate.adv.data.lon];
-                for (let j=0;j<last.length;j++) {
-                    let pair_id = `${last[j][0]}-${last[j][1]}_${current[0]}-${current[1]}`;
-                    if (!this.link_pairs.hasOwnProperty(pair_id)) {
-                        this.link_pairs[pair_id] = 0;
-                    }
-
-                    let offset = Math.floor((this.link_pairs[pair_id] + 1) / 2) * ln_offset;
-                    if (offset > ln_max_offets) offset = 0;
-                    offset *= this.link_pairs[pair_id] % 2 == 0 ? 1 : -1;
-
-                    this.link_pairs[pair_id]++;
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: 'white', weight: ln_outline, offset: offset}));
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: color, weight: ln_weight, offset: offset}));
-                }
-
-                // Next branches
-                if (current) {
-                    next.push(current);
-                }
-                foundNearby = true;
-            }
             last = next;
         }
 
@@ -1746,4 +1536,3 @@ class MeshLog {
         return false;
     }
 }
-

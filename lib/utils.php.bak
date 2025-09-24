@@ -10,9 +10,7 @@ class Utils {
             $seconds /= 1000;
         }
 
-        // Ensure we're using Hungarian timezone
-        date_default_timezone_set('Europe/Budapest');
-        return date("Y-m-d H:i:s", $seconds) . "." . str_pad($msec, 3, "0", STR_PAD_LEFT);
+        return date("Y-m-d H:i:s", $seconds) . "." . str_pad($msec, 3, "0", STR_PAD_LEFT);;
     }
 
     public static function get($arr, $key, $fallback) {

@@ -154,45 +154,35 @@ class MeshLogContact extends MeshLogObject {
                 }
             });
 
-            let dst;
-            
-            // If only one candidate, use it directly (no collision, no filtering needed)
-            if (candidates.length === 1) {
-                dst = [candidates[0].adv.data.lat, candidates[0].adv.data.lon];
-            } else if (candidates.length > 1) {
-                // Multiple candidates - apply distance filtering for collision resolution
-                let nearbyCandidates = candidates.filter(candidate => {
+            // Filter candidates by physical distance from hovered node
+            let nearbyCandidates = candidates.filter(candidate => {
+                let candidateCoords = [candidate.adv.data.lat, candidate.adv.data.lon];
+                if (_nocoord(candidateCoords)) return false;
+                
+                // Use Route Radius setting for neighbor filtering
+                return isWithinRadius(src[0], src[1], candidateCoords[0], candidateCoords[1], this._meshlog.settings.routeRadius);
+            });
+
+            // If no nearby candidates, skip this connection
+            if (nearbyCandidates.length === 0) return;
+
+            // Use the closest candidate if multiple are nearby
+            let closestCandidate = nearbyCandidates[0];
+            if (nearbyCandidates.length > 1) {
+                let minDistance = Infinity;
+                nearbyCandidates.forEach(candidate => {
                     let candidateCoords = [candidate.adv.data.lat, candidate.adv.data.lon];
-                    if (_nocoord(candidateCoords)) return false;
-                    
-                    // Use Route Radius setting for neighbor filtering
-                    return isWithinRadius(src[0], src[1], candidateCoords[0], candidateCoords[1], this._meshlog.settings.routeRadius);
+                    const latDiff = Math.abs(src[0] - candidateCoords[0]);
+                    const lonDiff = Math.abs(src[1] - candidateCoords[1]);
+                    const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
+                    if (distanceKm < minDistance) {
+                        minDistance = distanceKm;
+                        closestCandidate = candidate;
+                    }
                 });
-
-                // If no nearby candidates, skip this connection
-                if (nearbyCandidates.length === 0) return;
-
-                // Use the closest candidate if multiple are nearby
-                let closestCandidate = nearbyCandidates[0];
-                if (nearbyCandidates.length > 1) {
-                    let minDistance = Infinity;
-                    nearbyCandidates.forEach(candidate => {
-                        let candidateCoords = [candidate.adv.data.lat, candidate.adv.data.lon];
-                        const latDiff = Math.abs(src[0] - candidateCoords[0]);
-                        const lonDiff = Math.abs(src[1] - candidateCoords[1]);
-                        const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-                        if (distanceKm < minDistance) {
-                            minDistance = distanceKm;
-                            closestCandidate = candidate;
-                        }
-                    });
-                }
-
-                dst = [closestCandidate.adv.data.lat, closestCandidate.adv.data.lon];
-            } else {
-                // No candidates found, skip this connection
-                return;
             }
+
+            let dst = [closestCandidate.adv.data.lat, closestCandidate.adv.data.lon];
 
             // Red is incoming
             if (dir.in) {
@@ -1463,7 +1453,7 @@ class MeshLog {
                     }
                 });
                 
-                // If only one candidate, use it directly (no collision, no filtering needed)
+                // If only one candidate, use it regardless of distance (no collision)
                 if (candidates.length === 1) {
                     let v = candidates[0];
                     last.push([v.adv.data.lat, v.adv.data.lon]);
@@ -1525,7 +1515,7 @@ class MeshLog {
                 }
             });
             
-            // If only one candidate, use it directly (no collision, no filtering needed)
+            // If only one candidate, use it regardless of distance (no collision)
             if (candidates.length === 1) {
                 let v = candidates[0];
                 if (v.marker) {
@@ -1564,7 +1554,6 @@ class MeshLog {
                 foundNearby = true;
             } else if (candidates.length > 1) {
                 // Multiple candidates - use radius for collision resolution
-                let nearbyCandidates = [];
                 Object.entries(this.contacts).forEach(([k,v]) => {
                     if (v.hash == hashes[i] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
                         // Check if within radius of any previous node
@@ -1577,71 +1566,43 @@ class MeshLog {
                         }
                         
                         if (withinRadius) {
-                            nearbyCandidates.push(v);
+                            if (v.marker) {
+                                this.visible_markers.push(v.marker);
+                                this.map.removeLayer(v.marker);
+                                v.marker.addTo(this.map);
+                            }
+                            let current = [v.adv.data.lat, v.adv.data.lon];
+                            for (let j=0;j<last.length;j++) {
+                                let pair_id = `${last[j][0]}-${last[j][1]}_${current[0]}-${current[1]}`;
+                                if (!this.link_pairs.hasOwnProperty(pair_id)) {
+                                    this.link_pairs[pair_id] = 0;
+                                }
+
+                                let offset = Math.floor((this.link_pairs[pair_id] + 1) / 2) * ln_offset;
+                                if (offset > ln_max_offets) offset = 0;
+                                offset *= this.link_pairs[pair_id] % 2 == 0 ? 1 : -1;
+
+                                this.link_pairs[pair_id]++;
+
+                                layers.push(L.polyline([
+                                    last[j],
+                                    current
+                                ], {color: 'white', weight: ln_outline, offset: offset}));
+
+                                layers.push(L.polyline([
+                                    last[j],
+                                    current
+                                ], {color: color, weight: ln_weight, offset: offset}));
+                            }
+
+                            // Next branches
+                            if (current) {
+                                next.push(current);
+                            }
+                            foundNearby = true;
                         }
                     }
                 });
-
-                // If no nearby candidates, skip this hop
-                if (nearbyCandidates.length === 0) return;
-
-                // Use the closest candidate if multiple are nearby (fallback)
-                let closestCandidate = nearbyCandidates[0];
-                if (nearbyCandidates.length > 1) {
-                    let minDistance = Infinity;
-                    nearbyCandidates.forEach(candidate => {
-                        // Calculate distance to the closest previous node
-                        let minDistToPrev = Infinity;
-                        for (let j=0;j<last.length;j++) {
-                            const latDiff = Math.abs(last[j][0] - candidate.adv.data.lat);
-                            const lonDiff = Math.abs(last[j][1] - candidate.adv.data.lon);
-                            const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-                            if (distanceKm < minDistToPrev) {
-                                minDistToPrev = distanceKm;
-                            }
-                        }
-                        if (minDistToPrev < minDistance) {
-                            minDistance = minDistToPrev;
-                            closestCandidate = candidate;
-                        }
-                    });
-                }
-
-                // Draw lines to the closest candidate
-                if (closestCandidate.marker) {
-                    this.visible_markers.push(closestCandidate.marker);
-                    this.map.removeLayer(closestCandidate.marker);
-                    closestCandidate.marker.addTo(this.map);
-                }
-                let current = [closestCandidate.adv.data.lat, closestCandidate.adv.data.lon];
-                for (let j=0;j<last.length;j++) {
-                    let pair_id = `${last[j][0]}-${last[j][1]}_${current[0]}-${current[1]}`;
-                    if (!this.link_pairs.hasOwnProperty(pair_id)) {
-                        this.link_pairs[pair_id] = 0;
-                    }
-
-                    let offset = Math.floor((this.link_pairs[pair_id] + 1) / 2) * ln_offset;
-                    if (offset > ln_max_offets) offset = 0;
-                    offset *= this.link_pairs[pair_id] % 2 == 0 ? 1 : -1;
-
-                    this.link_pairs[pair_id]++;
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: 'white', weight: ln_outline, offset: offset}));
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: color, weight: ln_weight, offset: offset}));
-                }
-
-                // Next branches
-                if (current) {
-                    next.push(current);
-                }
-                foundNearby = true;
             }
             last = next;
         }
