@@ -32,8 +32,14 @@ class MeshLogContact extends MeshLogEntity {
     }
 
     public function isValid() {
-        if ($this->public_key == null) { echo "no PK"; return false; };
-        if ($this->enabled == null) { echo "no EN"; return false; };
+        if ($this->public_key == null) { 
+            error_log("Contact validation failed: no public key");
+            return false; 
+        }
+        if ($this->enabled == null) { 
+            error_log("Contact validation failed: no enabled flag");
+            return false; 
+        }
 
         return parent::isValid();
     }

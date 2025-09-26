@@ -1,0 +1,34 @@
+# Security headers
+Header always set X-Content-Type-Options nosniff
+Header always set X-Frame-Options DENY
+Header always set X-XSS-Protection "1; mode=block"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self';"
+
+# Disable directory browsing
+Options -Indexes
+
+# Deny access to config files
+<Files "config.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+<Files "config.example.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Deny access to backup files
+<FilesMatch "\.(bak|backup|old|tmp|log)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Protect lib directory from direct access
+<FilesMatch "^lib/">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# PHP security settings are configured in php.ini or main Apache config

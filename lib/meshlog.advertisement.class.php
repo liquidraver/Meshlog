@@ -91,8 +91,8 @@ class MeshLogAdvertisement extends MeshLogEntity {
         if ($this->received_at == null) { $err .= 'no received_at,'; }
 
         if ($err) {
-            error_log("Failed to save adv: $err");
-            echo $err;
+            error_log("Failed to save advertisement: $err");
+            return false;
         }
 
         return true;

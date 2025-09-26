@@ -203,7 +203,9 @@ class MeshLog {
     public function getChannelMessages($params) {
         $params['where'] = array();
         if (isset($params['id'])) {
-            $params['where'] = array('channel_id = ' . intval($id));
+            $params['where'] = array('channel_id = :channel_id', array(
+                array(':channel_id', intval($params['id']), PDO::PARAM_INT)
+            ));
         }
 
         return MeshLogChannelMessage::getAll($this, $params);
@@ -212,7 +214,9 @@ class MeshLog {
     public function getDirectMessages($params) {
         $params['where'] = array();
         if (isset($params['id'])) {
-            $params['where'] = array('contact_id = ' . intval($id));
+            $params['where'] = array('contact_id = :contact_id', array(
+                array(':contact_id', intval($params['id']), PDO::PARAM_INT)
+            ));
         }
 
         return MeshLogDirectMessage::getAll($this, $params);

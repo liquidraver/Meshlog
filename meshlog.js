@@ -391,7 +391,15 @@ class MeshLogContact extends MeshLogObject {
         } else if (receipt) {
             const hw = '20px';
             innerIcon = document.createElement('span');
-            innerIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="${hw}" viewBox="0 -960 960 960" width="${hw}" fill="${receipt}"><path d="M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z"/></svg>`;
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('height', hw);
+            svg.setAttribute('viewBox', '0 -960 960 960');
+            svg.setAttribute('width', hw);
+            svg.setAttribute('fill', this.sanitizeColor(receipt));
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z');
+            svg.appendChild(path);
+            innerIcon.appendChild(svg);
         } else {
             innerIcon = document.createElement('img');
             innerIcon.src = iconUrl;
@@ -422,7 +430,9 @@ class MeshLogContact extends MeshLogObject {
 
         const self = this;
 
-        let tooltip = `<p class="tooltip-title">${this.adv.data.name}</p><p class="tooltip-detail">Last adv: ${this.adv.data.sent_at}</p>`;
+        const sanitizedName = this._meshlog.sanitizeText(this.adv.data.name);
+        const sanitizedDate = this._meshlog.sanitizeText(this.adv.data.sent_at);
+        let tooltip = `<p class="tooltip-title">${sanitizedName}</p><p class="tooltip-detail">Last adv: ${sanitizedDate}</p>`;
 
         this.marker = L.marker([this.adv.data.lat, this.adv.data.lon], { icon: icon }).addTo(map);
         this.marker.bindTooltip(tooltip);
@@ -454,7 +464,7 @@ class MeshLogContact extends MeshLogObject {
             this.dom.hash.classList.remove("prio-5");
         }
 
-        this.dom.pubkey.innerText = `Public Key: ${this.data.public_key}`;
+        this.dom.pubkey.innerText = `Public Key: ${this._meshlog.sanitizeText(this.data.public_key)}`;
 
         if (this.adv.data.type == 1) {
             this.dom.icon.src = "assets/img/person.svg";
@@ -470,9 +480,9 @@ class MeshLogContact extends MeshLogObject {
             this.dom.icon.src = "assets/img/unknown.svg";
         }
 
-        this.dom.name.innerText = this.adv.data.name;
-        this.dom.date.innerText = this.adv.data.sent_at;
-        this.dom.hash.innerText = `[${hashstr}]`;
+        this.dom.name.innerText = this._meshlog.sanitizeText(this.adv.data.name);
+        this.dom.date.innerText = this._meshlog.sanitizeText(this.adv.data.sent_at);
+        this.dom.hash.innerText = `[${this._meshlog.validateHash(hashstr)}]`;
 
         const removeEmojis = (str) => {
             return str.replace(
@@ -488,8 +498,8 @@ class MeshLogContact extends MeshLogObject {
         }
 
         this.dom.container.dataset.time = this.adv.time;
-        this.dom.container.dataset.name = removeEmojis(this.adv.data.name).trim();
-        this.dom.container.dataset.hash = hashstr;
+        this.dom.container.dataset.name = this._meshlog.sanitizeText(removeEmojis(this.adv.data.name).trim());
+        this.dom.container.dataset.hash = this._meshlog.validateHash(hashstr);
     }
 
     updateMarker() {
@@ -577,8 +587,8 @@ class MeshLogGroupChild extends MeshLogObject {
 
     updateDom() {
         if (!this.dom) return;
-        this.dom.date.innerText = this.data.sent_at;
-        this.dom.text.innerText = this.data.path ? this.data.path : 'direct';
+        this.dom.date.innerText = this._meshlog.sanitizeText(this.data.sent_at);
+        this.dom.text.innerText = this.data.path ? this._meshlog.sanitizeText(this.data.path) : 'direct';
     }
 
     pathTag() { return '?'; }
@@ -756,16 +766,16 @@ class MeshLogMessageGroup extends MeshLogObject {
         if (!msg) return;
 
         // Display timestamp as-is (server is already in CEST/UTC+2)
-        this.dom.date.innerText = msg.data.sent_at;
+        this.dom.date.innerText = this._meshlog.sanitizeText(msg.data.sent_at);
         
         // Add channel name prefix for channel messages
-        let displayName = msg.data.name;
+        let displayName = this._meshlog.sanitizeText(msg.data.name);
         if (msg instanceof MeshLogChannelMessage) {
             // Map channel_id to channel name
             if (msg.data.channel_id === 1) {
-                displayName = "(Public) " + msg.data.name;
+                displayName = "(Public) " + displayName;
             } else if (msg.data.channel_id === 2) {
-                displayName = "(Hungary) " + msg.data.name;
+                displayName = "(Hungary) " + displayName;
             }
         }
         this.dom.name.innerText = displayName + ": ";
@@ -780,12 +790,12 @@ class MeshLogMessageGroup extends MeshLogObject {
             this.dom.text.style.color = 'gray';
             hidden = !this._meshlog.settings.types.advertisements;
         } else if (msg instanceof MeshLogChannelMessage) {
-            this.dom.text.innerText = msg.data.message;
+            this.dom.text.innerText = this._meshlog.sanitizeText(msg.data.message);
             this.dom.name.style.color = '#d87dff'
             this.dom.text.style.color = 'white';
             hidden = !this._meshlog.settings.types.channel_messages;
         } else if (msg instanceof MeshLogDirecMessage) {
-            this.dom.text.innerText = msg.data.message;
+            this.dom.text.innerText = this._meshlog.sanitizeText(msg.data.message);
             this.dom.text.style.color = 'white';
             hidden = !this._meshlog.settings.types.direct_messages;
         } else {
@@ -877,6 +887,37 @@ class MeshLog {
         this.last = '2025-01-01 00:00:00';
     }
 
+    sanitizeText(text) {
+        if (typeof text !== 'string') return '';
+        return text.replace(/[<>&"']/g, (match) => {
+            const escapeMap = {
+                '<': '&lt;',
+                '>': '&gt;',
+                '&': '&amp;',
+                '"': '&quot;',
+                "'": '&#x27;'
+            };
+            return escapeMap[match];
+        });
+    }
+
+    sanitizeColor(color) {
+        if (typeof color !== 'string') return '#000000';
+        if (/^#[0-9A-Fa-f]{6}$/.test(color)) return color;
+        if (/^#[0-9A-Fa-f]{3}$/.test(color)) return color;
+        return '#000000';
+    }
+
+    validateRadius(value) {
+        const num = parseInt(value, 10);
+        return !isNaN(num) && num >= 5 && num <= 300 ? num : 90;
+    }
+
+    validateHash(hash) {
+        if (typeof hash !== 'string') return '00';
+        return /^[0-9a-fA-F]{2}$/.test(hash) ? hash : '00';
+    }
+
     __createCb(label, img, checked, onchange) {
         let div = document.createElement("div");
         let cb = document.createElement("input");
@@ -936,7 +977,9 @@ class MeshLog {
             {
                 name: 'Hash',
                 fn: (a, b) => { 
-                    return parseInt(`0x${a.dataset.hash}`) - parseInt(`0x${b.dataset.hash}`);
+                    const hashA = this.validateHash(a.dataset.hash);
+                    const hashB = this.validateHash(b.dataset.hash);
+                    return parseInt(`0x${hashA}`) - parseInt(`0x${hashB}`);
                 }
             },
             {
@@ -1044,8 +1087,7 @@ class MeshLog {
         radiusSlider.step = '5';
         radiusSlider.style.width = '150px';
         radiusSlider.onchange = (e) => {
-            this.settings.routeRadius = parseInt(e.target.value);
-            console.log(`Hop collision radius set to: ${this.settings.routeRadius}km`);
+            this.settings.routeRadius = this.validateRadius(e.target.value);
             
             // Clear all existing paths so they can be redrawn with new radius
             Object.keys(this.map_layers).forEach(pathId => {
@@ -1439,12 +1481,12 @@ class MeshLog {
             const hash = hashes[i];
             
             for (const v of Object.values(contacts)) {
-                if (v.hash === hash && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
+                if (v.hash === hash && v.adv && !v.adv.isExpired() && v.isRepeater()) {
                     candidates.push(v);
                 }
             }
             
-            if (candidates.length === 0) return pathNodes;
+            if (candidates.length === 0) continue;
             
             let selectedNode = null;
             
@@ -1486,7 +1528,7 @@ class MeshLog {
                         }
                     }
                     
-                    if (validCandidates.length === 0) return pathNodes;
+                    if (validCandidates.length === 0) continue;
                     
                     let closest = validCandidates[0];
                     for (let j = 1; j < validCandidates.length; j++) {
@@ -1500,8 +1542,6 @@ class MeshLog {
             
             if (selectedNode) {
                 pathNodes.push(selectedNode);
-            } else {
-                return pathNodes;
             }
         }
         
@@ -1526,6 +1566,7 @@ class MeshLog {
         const map = this.map;
         const linkPairs = this.link_pairs;
 
+
         for (const v of Object.values(contacts)) {
             if (v.data.public_key === dst.data.public_key && v.marker) {
                 visibleMarkers.push(v.marker);
@@ -1534,7 +1575,30 @@ class MeshLog {
             }
         }
 
-        if (!src || (src.adv && src.isClient())) {
+        if (!src || (src.adv && src.isClient()) || (src.adv && src.adv.data)) {
+            // Check if client has valid coordinates and non-expired advertisement
+            const hasValidClientCoords = src && src.adv && src.isClient() && 
+                                       src.adv.data && src.adv.data.lat && src.adv.data.lon &&
+                                       !src.adv.isExpired();
+            
+            if (hasValidClientCoords) {
+                // Start route from client location
+                last.push([src.adv.data.lat, src.adv.data.lon]);
+                if (src.marker) {
+                    visibleMarkers.push(src.marker);
+                    map.removeLayer(src.marker);
+                    src.marker.addTo(map);
+                }
+            } else if (src && src.adv && src.adv.data && !src.isClient()) {
+                // For repeater advertisements, add the source repeater as the first hop
+                last.push([src.adv.data.lat, src.adv.data.lon]);
+                if (src.marker) {
+                    visibleMarkers.push(src.marker);
+                    map.removeLayer(src.marker);
+                    src.marker.addTo(map);
+                }
+            }
+            
             if (hashes.length > 0) {
                 const pathNodes = this.validatePath(hashes, src);
                 for (const node of pathNodes) {
@@ -1546,16 +1610,20 @@ class MeshLog {
                     }
                 }
             }
+        }
 
-            for (const coords of last) {
-                layers.push(L.circle(coords, {
-                    color: color,
-                    fillColor: color,
-                    fillOpacity: 0.2,
-                    radius: 1000
-                }));
-            }
-        } else if (src.adv) {
+        // Always draw circle at first hop for any path
+        if (last.length > 0) {
+            const firstHop = last[0];
+            layers.push(L.circle(firstHop, {
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.2,
+                radius: 1000
+            }));
+        }
+
+        if (src && src.adv && !src.isClient() && !src.adv.data) {
             if (src.marker) {
                 visibleMarkers.push(src.marker);
                 map.removeLayer(src.marker);

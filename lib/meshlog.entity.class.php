@@ -88,8 +88,8 @@ class MeshLogEntity {
                 $this->_id = $meshlog->pdo->lastInsertId();
             }
         } catch (PDOException $e) {
-            error_log($e->getMessage());
-            echo $e->getMessage();
+            error_log("Database error: " . $e->getMessage());
+            return false;
         }
 
         if ($this->isNew() && $result) {

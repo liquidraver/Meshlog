@@ -58,10 +58,22 @@ class MeshLogDirectMessage extends MeshLogEntity {
         if ($this->contact_ref == null) return false;
         if ($this->reporter_ref == null) return false;
 
-        if ($this->hash == null) { echo 'no hash'; return false; }
-        if ($this->message == null) { echo 'no snr'; return false; }
-        if ($this->sent_at == null) { echo 'no sent_at'; return false; }
-        if ($this->received_at == null) { echo 'no received_at'; return false; }
+        if ($this->hash == null) { 
+            error_log("Direct message validation failed: no hash");
+            return false; 
+        }
+        if ($this->message == null) { 
+            error_log("Direct message validation failed: no message");
+            return false; 
+        }
+        if ($this->sent_at == null) { 
+            error_log("Direct message validation failed: no sent_at");
+            return false; 
+        }
+        if ($this->received_at == null) { 
+            error_log("Direct message validation failed: no received_at");
+            return false; 
+        }
 
         return true;
     }
