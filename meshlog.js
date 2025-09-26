@@ -165,7 +165,7 @@ class MeshLogContact extends MeshLogObject {
                     let candidateCoords = [candidate.adv.data.lat, candidate.adv.data.lon];
                     if (_nocoord(candidateCoords)) return false;
                     
-                    // Use Route Radius setting for neighbor filtering
+                    // Use Hop Collision Radius setting for neighbor filtering
                     return isWithinRadius(src[0], src[1], candidateCoords[0], candidateCoords[1], this._meshlog.settings.routeRadius);
                 });
 
@@ -864,7 +864,7 @@ class MeshLog {
             contacts: {
 
             },
-            routeRadius: 100 // Default 100km radius
+            routeRadius: 90 // Default 90km hop collision radius
         }
 
         this.dom_settings_types = document.getElementById(stypesid);
@@ -1035,17 +1035,17 @@ class MeshLog {
         let radiusContainer = document.createElement('div');
         radiusContainer.classList.add('settings-cb');
         let radiusLabel = document.createElement('label');
-        radiusLabel.innerText = 'Route Radius: ';
+        radiusLabel.innerText = 'Hop Collision Radius: ';
         let radiusSlider = document.createElement('input');
         radiusSlider.type = 'range';
         radiusSlider.min = '5';
         radiusSlider.max = '300';
-        radiusSlider.value = '100';
+        radiusSlider.value = '90';
         radiusSlider.step = '5';
         radiusSlider.style.width = '150px';
         radiusSlider.onchange = (e) => {
             this.settings.routeRadius = parseInt(e.target.value);
-            console.log(`Route radius set to: ${this.settings.routeRadius}km`);
+            console.log(`Hop collision radius set to: ${this.settings.routeRadius}km`);
             
             // Clear all existing paths so they can be redrawn with new radius
             Object.keys(this.map_layers).forEach(pathId => {
@@ -1429,243 +1429,185 @@ class MeshLog {
         });
     }
 
+    validatePath(hashes, src) {
+        const pathNodes = [];
+        const contacts = this.contacts;
+        const routeRadius = this.settings.routeRadius;
+        
+        for (let i = 0; i < hashes.length; i++) {
+            const candidates = [];
+            const hash = hashes[i];
+            
+            for (const v of Object.values(contacts)) {
+                if (v.hash === hash && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
+                    candidates.push(v);
+                }
+            }
+            
+            if (candidates.length === 0) return pathNodes;
+            
+            let selectedNode = null;
+            
+            if (candidates.length === 1) {
+                selectedNode = candidates[0];
+            } else {
+                if (i === 0) {
+                    if (src?.adv?.data?.lat && src?.adv?.data?.lon) {
+                        let minDistance = Infinity;
+                        const srcLat = src.adv.data.lat;
+                        const srcLon = src.adv.data.lon;
+                        
+                        for (const candidate of candidates) {
+                            const distance = this.calculateDistance(
+                                srcLat, srcLon,
+                                candidate.adv.data.lat, candidate.adv.data.lon
+                            );
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                selectedNode = candidate;
+                            }
+                        }
+                    } else {
+                        selectedNode = candidates[0];
+                    }
+                } else {
+                    const previousNode = pathNodes[pathNodes.length - 1];
+                    const validCandidates = [];
+                    const prevLat = previousNode.adv.data.lat;
+                    const prevLon = previousNode.adv.data.lon;
+                    
+                    for (const candidate of candidates) {
+                        const distance = this.calculateDistance(
+                            prevLat, prevLon,
+                            candidate.adv.data.lat, candidate.adv.data.lon
+                        );
+                        if (distance <= routeRadius) {
+                            validCandidates.push({candidate, distance});
+                        }
+                    }
+                    
+                    if (validCandidates.length === 0) return pathNodes;
+                    
+                    let closest = validCandidates[0];
+                    for (let j = 1; j < validCandidates.length; j++) {
+                        if (validCandidates[j].distance < closest.distance) {
+                            closest = validCandidates[j];
+                        }
+                    }
+                    selectedNode = closest.candidate;
+                }
+            }
+            
+            if (selectedNode) {
+                pathNodes.push(selectedNode);
+            } else {
+                return pathNodes;
+            }
+        }
+        
+        return pathNodes;
+    }
+
+
+    calculateDistance(lat1, lon1, lat2, lon2) {
+        const latDiff = lat1 - lat2;
+        const lonDiff = lon1 - lon2;
+        return Math.sqrt(latDiff * latDiff + lonDiff * lonDiff) * 111;
+    }
+
     showPath(id, path, src, dst, color) {
         if (this.map_layers.hasOwnProperty(id)) return;
 
-        // TODO: generate "link" pairs. If same node pair exists, place new layer under and with larger radius
+        const layers = [];
+        const last = [];
+        const hashes = path ? path.split(',') : [];
+        const contacts = this.contacts;
+        const visibleMarkers = this.visible_markers;
+        const map = this.map;
+        const linkPairs = this.link_pairs;
 
-        let layers = [];
-        let last = [];
-        let hashes = path ? path.split(',') : [];
-
-        // Distance calculation function using simple bounding box
-        const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm) => {
-            const latDiff = Math.abs(lat1 - lat2);
-            const lonDiff = Math.abs(lon1 - lon2);
-            // Rough conversion: 1 degree ≈ 111km
-            const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-            return distanceKm <= radiusKm;
-        };
-
-
-        Object.entries(this.contacts).forEach(([k,v]) => {
-            if (v.data.public_key == dst.data.public_key) {
-                if (v.marker) {
-                    this.visible_markers.push(v.marker);
-                    this.map.removeLayer(v.marker);
-                    v.marker.addTo(this.map);
-                }
+        for (const v of Object.values(contacts)) {
+            if (v.data.public_key === dst.data.public_key && v.marker) {
+                visibleMarkers.push(v.marker);
+                map.removeLayer(v.marker);
+                v.marker.addTo(map);
             }
-        });
+        }
 
         if (!src || (src.adv && src.isClient())) {
             if (hashes.length > 0) {
-                // Collect all repeaters with the first hash
-                let candidates = [];
-                Object.entries(this.contacts).forEach(([k,v]) => {
-                    if (v.hash == hashes[0] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
-                        candidates.push(v);
+                const pathNodes = this.validatePath(hashes, src);
+                for (const node of pathNodes) {
+                    last.push([node.adv.data.lat, node.adv.data.lon]);
+                    if (node.marker) {
+                        visibleMarkers.push(node.marker);
+                        map.removeLayer(node.marker);
+                        node.marker.addTo(map);
                     }
-                });
-                
-                // If only one candidate, use it directly (no collision, no filtering needed)
-                if (candidates.length === 1) {
-                    let v = candidates[0];
-                    last.push([v.adv.data.lat, v.adv.data.lon]);
-                    if (v.marker) {
-                        this.visible_markers.push(v.marker);
-                        this.map.removeLayer(v.marker);
-                        v.marker.addTo(this.map);
-                    }
-                } else if (candidates.length > 1) {
-                    // Multiple candidates - use radius for collision resolution
-                    Object.entries(this.contacts).forEach(([k,v]) => {
-                        if (v.hash == hashes[0] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
-                            // Check if within radius of source
-                            if (src && src.adv && isWithinRadius(src.adv.data.lat, src.adv.data.lon, v.adv.data.lat, v.adv.data.lon, this.settings.routeRadius)) {
-                                last.push([v.adv.data.lat, v.adv.data.lon]);
-                                if (v.marker) {
-                                    this.visible_markers.push(v.marker);
-                                    this.map.removeLayer(v.marker);
-                                    v.marker.addTo(this.map);
-                                }
-                            }
-                        }
-                    });
                 }
             }
 
-            for (let i=0;i<last.length;i++) {
-                let circle = L.circle(last[i], {
+            for (const coords of last) {
+                layers.push(L.circle(coords, {
                     color: color,
                     fillColor: color,
                     fillOpacity: 0.2,
                     radius: 1000
-                });
-                layers.push(circle);
+                }));
             }
         } else if (src.adv) {
             if (src.marker) {
-                this.visible_markers.push(src.marker);
-                this.map.removeLayer(src.marker);
-                src.marker.addTo(this.map);
+                visibleMarkers.push(src.marker);
+                map.removeLayer(src.marker);
+                src.marker.addTo(map);
             }
             last.push([src.adv.data.lat, src.adv.data.lon]);
         }
 
-        const ln_weight = 2;
-        const ln_outline = 4;
-        const ln_offset = 3;
-        const ln_max_offets = 6;
+        const lnWeight = 2;
+        const lnOutline = 4;
+        const lnOffset = 3;
+        const lnMaxOffsets = 6;
 
-        for (let i=0;i<hashes.length;i++) {
-            let next = [];
-            let foundNearby = false;
-            
-            // Collect all repeaters with this hash
-            let candidates = [];
-            Object.entries(this.contacts).forEach(([k,v]) => {
-                if (v.hash == hashes[i] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
-                    candidates.push(v);
-                }
-            });
-            
-            // If only one candidate, use it directly (no collision, no filtering needed)
-            if (candidates.length === 1) {
-                let v = candidates[0];
-                if (v.marker) {
-                    this.visible_markers.push(v.marker);
-                    this.map.removeLayer(v.marker);
-                    v.marker.addTo(this.map);
-                }
-                let current = [v.adv.data.lat, v.adv.data.lon];
-                for (let j=0;j<last.length;j++) {
-                    let pair_id = `${last[j][0]}-${last[j][1]}_${current[0]}-${current[1]}`;
-                    if (!this.link_pairs.hasOwnProperty(pair_id)) {
-                        this.link_pairs[pair_id] = 0;
-                    }
-
-                    let offset = Math.floor((this.link_pairs[pair_id] + 1) / 2) * ln_offset;
-                    if (offset > ln_max_offets) offset = 0;
-                    offset *= this.link_pairs[pair_id] % 2 == 0 ? 1 : -1;
-
-                    this.link_pairs[pair_id]++;
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: 'white', weight: ln_outline, offset: offset}));
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: color, weight: ln_weight, offset: offset}));
+        if (last.length > 0) {
+            for (let i = 1; i < last.length; i++) {
+                const prev = last[i-1];
+                const current = last[i];
+                
+                const pairId = `${prev[0]}-${prev[1]}_${current[0]}-${current[1]}`;
+                if (!linkPairs.hasOwnProperty(pairId)) {
+                    linkPairs[pairId] = 0;
                 }
 
-                // Next branches
-                if (current) {
-                    next.push(current);
-                }
-                foundNearby = true;
-            } else if (candidates.length > 1) {
-                // Multiple candidates - use radius for collision resolution
-                let nearbyCandidates = [];
-                Object.entries(this.contacts).forEach(([k,v]) => {
-                    if (v.hash == hashes[i] && v.adv && !v.adv.isVeryExpired() && v.isRepeater()) {
-                        // Check if within radius of any previous node
-                        let withinRadius = false;
-                        for (let j=0;j<last.length;j++) {
-                            if (isWithinRadius(last[j][0], last[j][1], v.adv.data.lat, v.adv.data.lon, this.settings.routeRadius)) {
-                                withinRadius = true;
-                                break;
-                            }
-                        }
-                        
-                        if (withinRadius) {
-                            nearbyCandidates.push(v);
-                        }
-                    }
-                });
+                let offset = Math.floor((linkPairs[pairId] + 1) / 2) * lnOffset;
+                if (offset > lnMaxOffsets) offset = 0;
+                offset *= linkPairs[pairId] % 2 === 0 ? 1 : -1;
 
-                // If no nearby candidates, skip this hop
-                if (nearbyCandidates.length === 0) return;
+                linkPairs[pairId]++;
 
-                // Use the closest candidate if multiple are nearby (fallback)
-                let closestCandidate = nearbyCandidates[0];
-                if (nearbyCandidates.length > 1) {
-                    let minDistance = Infinity;
-                    nearbyCandidates.forEach(candidate => {
-                        // Calculate distance to the closest previous node
-                        let minDistToPrev = Infinity;
-                        for (let j=0;j<last.length;j++) {
-                            const latDiff = Math.abs(last[j][0] - candidate.adv.data.lat);
-                            const lonDiff = Math.abs(last[j][1] - candidate.adv.data.lon);
-                            const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-                            if (distanceKm < minDistToPrev) {
-                                minDistToPrev = distanceKm;
-                            }
-                        }
-                        if (minDistToPrev < minDistance) {
-                            minDistance = minDistToPrev;
-                            closestCandidate = candidate;
-                        }
-                    });
-                }
-
-                // Draw lines to the closest candidate
-                if (closestCandidate.marker) {
-                    this.visible_markers.push(closestCandidate.marker);
-                    this.map.removeLayer(closestCandidate.marker);
-                    closestCandidate.marker.addTo(this.map);
-                }
-                let current = [closestCandidate.adv.data.lat, closestCandidate.adv.data.lon];
-                for (let j=0;j<last.length;j++) {
-                    let pair_id = `${last[j][0]}-${last[j][1]}_${current[0]}-${current[1]}`;
-                    if (!this.link_pairs.hasOwnProperty(pair_id)) {
-                        this.link_pairs[pair_id] = 0;
-                    }
-
-                    let offset = Math.floor((this.link_pairs[pair_id] + 1) / 2) * ln_offset;
-                    if (offset > ln_max_offets) offset = 0;
-                    offset *= this.link_pairs[pair_id] % 2 == 0 ? 1 : -1;
-
-                    this.link_pairs[pair_id]++;
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: 'white', weight: ln_outline, offset: offset}));
-
-                    layers.push(L.polyline([
-                        last[j],
-                        current
-                    ], {color: color, weight: ln_weight, offset: offset}));
-                }
-
-                // Next branches
-                if (current) {
-                    next.push(current);
-                }
-                foundNearby = true;
+                layers.push(L.polyline([prev, current], {color: 'white', weight: lnOutline, offset: offset}));
+                layers.push(L.polyline([prev, current], {color: color, weight: lnWeight, offset: offset}));
             }
-            last = next;
+
+            const lastHop = last[last.length - 1];
+            const current = [dst.data.lat, dst.data.lon];
+            
+            const pairId = `${lastHop[0]}-${lastHop[1]}_${current[0]}-${current[1]}`;
+            if (!linkPairs.hasOwnProperty(pairId)) {
+                linkPairs[pairId] = 0;
+            }
+
+            let offset = Math.floor((linkPairs[pairId] + 1) / 2) * lnOffset;
+            if (offset > lnMaxOffsets) offset = 0;
+            offset *= linkPairs[pairId] % 2 === 0 ? 1 : -1;
+
+            linkPairs[pairId]++;
+
+            layers.push(L.polyline([lastHop, current], {color: 'white', weight: lnOutline, offset: offset}));
+            layers.push(L.polyline([lastHop, current], {color: color, weight: lnWeight, offset: offset}));
         }
 
-        let current = [dst.data.lat, dst.data.lon];
-        for (let j=0;j<last.length;j++) {
-            layers.push(L.polyline([
-                last[j],
-                current
-            ], {color: 'white', weight: ln_outline}));
-
-            layers.push(L.polyline([
-                last[j],
-                current
-            ], {color: color, weight: ln_weight}));
-        }
-
-        let group = L.layerGroup(layers).addTo(this.map);
-        this.map_layers[id] = group;
+        this.map_layers[id] = L.layerGroup(layers).addTo(map);
         this.fadeMarkers();
     }
 
