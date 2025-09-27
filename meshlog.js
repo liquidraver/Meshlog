@@ -136,14 +136,6 @@ class MeshLogContact extends MeshLogObject {
         const ln_outline = 4;
         const ln_offset = 3;
 
-        // Distance calculation function (same as in showPath)
-        const isWithinRadius = (lat1, lon1, lat2, lon2, radiusKm) => {
-            const latDiff = Math.abs(lat1 - lat2);
-            const lonDiff = Math.abs(lon1 - lon2);
-            // Rough conversion: 1 degree ≈ 111km
-            const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-            return distanceKm <= radiusKm;
-        };
 
         Object.entries(links).forEach(([hash,dir]) => {
             // Find all contacts with this hash (handles colliding IDs)
@@ -156,37 +148,27 @@ class MeshLogContact extends MeshLogObject {
 
             let dst;
             
-            // If only one candidate, use it directly (no collision, no filtering needed)
+            // If only one candidate, use it directly
             if (candidates.length === 1) {
                 dst = [candidates[0].adv.data.lat, candidates[0].adv.data.lon];
             } else if (candidates.length > 1) {
-                // Multiple candidates - apply distance filtering for collision resolution
-                let nearbyCandidates = candidates.filter(candidate => {
+                // Multiple candidates - select the closest one by distance
+                let closestCandidate = candidates[0];
+                let minDistance = Infinity;
+                
+                candidates.forEach(candidate => {
                     let candidateCoords = [candidate.adv.data.lat, candidate.adv.data.lon];
-                    if (_nocoord(candidateCoords)) return false;
+                    if (_nocoord(candidateCoords)) return;
                     
-                    // Use Hop Collision Radius setting for neighbor filtering
-                    return isWithinRadius(src[0], src[1], candidateCoords[0], candidateCoords[1], this._meshlog.settings.routeRadius);
+                    const latDiff = Math.abs(src[0] - candidateCoords[0]);
+                    const lonDiff = Math.abs(src[1] - candidateCoords[1]);
+                    const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
+                    
+                    if (distanceKm < minDistance) {
+                        minDistance = distanceKm;
+                        closestCandidate = candidate;
+                    }
                 });
-
-                // If no nearby candidates, skip this connection
-                if (nearbyCandidates.length === 0) return;
-
-                // Use the closest candidate if multiple are nearby
-                let closestCandidate = nearbyCandidates[0];
-                if (nearbyCandidates.length > 1) {
-                    let minDistance = Infinity;
-                    nearbyCandidates.forEach(candidate => {
-                        let candidateCoords = [candidate.adv.data.lat, candidate.adv.data.lon];
-                        const latDiff = Math.abs(src[0] - candidateCoords[0]);
-                        const lonDiff = Math.abs(src[1] - candidateCoords[1]);
-                        const distanceKm = Math.sqrt(latDiff*latDiff + lonDiff*lonDiff) * 111;
-                        if (distanceKm < minDistance) {
-                            minDistance = distanceKm;
-                            closestCandidate = candidate;
-                        }
-                    });
-                }
 
                 dst = [closestCandidate.adv.data.lat, closestCandidate.adv.data.lon];
             } else {
@@ -660,6 +642,14 @@ class MeshLogMessageGroup extends MeshLogObject {
         date.classList.add("sp");
         date.classList.add("c");
 
+        let translateBtn = document.createElement("button");
+        translateBtn.classList.add("translate-btn");
+        translateBtn.innerText = "T";
+        translateBtn.title = "Translate message";
+        translateBtn.style.marginLeft = "4px";
+        translateBtn.style.marginRight = "12px";
+        translateBtn.setAttribute("data-state", "translate");
+
         let message = document.createElement("div");
 
         let name = document.createElement("span");
@@ -684,6 +674,11 @@ class MeshLogMessageGroup extends MeshLogObject {
             e.stopPropagation();
         }
 
+        translateBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.translateMessage();
+        }
+
         let child = document.createElement("div");
         child.style.borderLeft = "solid 2px #888";
         child.style.marginLeft = "2px";
@@ -697,6 +692,7 @@ class MeshLogMessageGroup extends MeshLogObject {
         message.appendChild(text);
 
         group.appendChild(date);
+        group.appendChild(translateBtn);
         group.appendChild(message);
         group.appendChild(right);
         container.appendChild(group);
@@ -710,9 +706,18 @@ class MeshLogMessageGroup extends MeshLogObject {
             text,
             right,
             count,
+            translateBtn,
             pin,
             child
         };
+
+        // Store original message text and translation state
+        this.originalText = null;
+        this.translatedText = null;
+        this.isTranslated = false;
+        
+        // Load translation state from localStorage
+        this.loadTranslationState();
 
         group.onclick = (e) => {
             child.hidden = !child.hidden;
@@ -776,6 +781,8 @@ class MeshLogMessageGroup extends MeshLogObject {
                 displayName = "(Public) " + displayName;
             } else if (msg.data.channel_id === 2) {
                 displayName = "(Hungary) " + displayName;
+            } else if (msg.data.channel_id === 3) {
+                displayName = "(#hungary) " + displayName;
             }
         }
         this.dom.name.innerText = displayName + ": ";
@@ -790,12 +797,18 @@ class MeshLogMessageGroup extends MeshLogObject {
             this.dom.text.style.color = 'gray';
             hidden = !this._meshlog.settings.types.advertisements;
         } else if (msg instanceof MeshLogChannelMessage) {
-            this.dom.text.innerText = this._meshlog.sanitizeText(msg.data.message);
+            // Preserve translation state during auto-refresh
+            if (!this.isTranslated) {
+                this.dom.text.innerText = this._meshlog.sanitizeText(msg.data.message);
+            }
             this.dom.name.style.color = '#d87dff'
             this.dom.text.style.color = 'white';
             hidden = !this._meshlog.settings.types.channel_messages;
         } else if (msg instanceof MeshLogDirecMessage) {
-            this.dom.text.innerText = this._meshlog.sanitizeText(msg.data.message);
+            // Preserve translation state during auto-refresh
+            if (!this.isTranslated) {
+                this.dom.text.innerText = this._meshlog.sanitizeText(msg.data.message);
+            }
             this.dom.text.style.color = 'white';
             hidden = !this._meshlog.settings.types.direct_messages;
         } else {
@@ -819,6 +832,110 @@ class MeshLogMessageGroup extends MeshLogObject {
         Object.entries(this.messages).forEach(([k,v]) => {
             v.updateDom();
         })
+    }
+
+    async translateMessage() {
+        const msg = this.first();
+        if (!msg || !msg.data.message) {
+            return;
+        }
+
+        const translateBtn = this.dom.translateBtn;
+        
+        // Store original text if not already stored
+        if (!this.originalText) {
+            this.originalText = this.dom.text.innerText;
+        }
+
+        // If already translated, toggle back to original
+        if (this.isTranslated) {
+            this.dom.text.innerText = this.originalText;
+            this.isTranslated = false;
+            translateBtn.innerText = "T";
+            translateBtn.title = "Translate message";
+            translateBtn.setAttribute("data-state", "translate");
+            translateBtn.disabled = false;
+            this.saveTranslationState();
+            return;
+        }
+
+        // Show loading state
+        translateBtn.innerText = "...";
+        translateBtn.disabled = true;
+
+        try {
+            const translation = await this._meshlog.translateText(msg.data.message);
+            
+            if (translation) {
+                // Store translation and update display
+                this.translatedText = translation;
+                this.dom.text.innerText = translation;
+                this.isTranslated = true;
+                
+                // Change button to show it's translated
+                translateBtn.innerText = "O";
+                translateBtn.title = "Show original";
+                translateBtn.setAttribute("data-state", "original");
+                translateBtn.disabled = false;
+                this.saveTranslationState();
+            } else {
+                translateBtn.innerText = "!";
+                translateBtn.title = "Translation failed";
+                translateBtn.disabled = false;
+            }
+        } catch (error) {
+            console.error('Translation error:', error);
+            translateBtn.innerText = "!";
+            translateBtn.title = "Translation error";
+            translateBtn.disabled = false;
+        }
+    }
+
+    loadTranslationState() {
+        const msg = this.first();
+        if (!msg || !msg.data.message) return;
+
+        // Create a unique key for this message
+        const messageKey = `translation_${msg.data.id}_${msg.data.hash}`;
+        
+        try {
+            const savedState = localStorage.getItem(messageKey);
+            if (savedState) {
+                const state = JSON.parse(savedState);
+                if (state.isTranslated && state.translatedText) {
+                    this.originalText = state.originalText;
+                    this.translatedText = state.translatedText;
+                    this.isTranslated = true;
+                    
+                    // Update the display
+                    this.dom.text.innerText = state.translatedText;
+                    this.dom.translateBtn.innerText = "O";
+                    this.dom.translateBtn.title = "Show original";
+                    this.dom.translateBtn.setAttribute("data-state", "original");
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load translation state:', error);
+        }
+    }
+
+    saveTranslationState() {
+        const msg = this.first();
+        if (!msg || !msg.data.message) return;
+
+        // Create a unique key for this message
+        const messageKey = `translation_${msg.data.id}_${msg.data.hash}`;
+        
+        try {
+            const state = {
+                isTranslated: this.isTranslated,
+                originalText: this.originalText,
+                translatedText: this.translatedText
+            };
+            localStorage.setItem(messageKey, JSON.stringify(state));
+        } catch (error) {
+            console.warn('Failed to save translation state:', error);
+        }
     }
 }
 
@@ -874,7 +991,12 @@ class MeshLog {
             contacts: {
 
             },
-            routeRadius: 90 // Default 90km hop collision radius
+            translation: {
+                enabled: true,
+                fromLang: 'sk',
+                toLang: 'hu',
+                cache: {} // Cache translations to avoid repeated API calls
+            }
         }
 
         this.dom_settings_types = document.getElementById(stypesid);
@@ -883,6 +1005,7 @@ class MeshLog {
 
         this.__init_types();
         this.__init_order();
+        this.__init_translation();
 
         this.last = '2025-01-01 00:00:00';
     }
@@ -908,10 +1031,6 @@ class MeshLog {
         return '#000000';
     }
 
-    validateRadius(value) {
-        const num = parseInt(value, 10);
-        return !isNaN(num) && num >= 5 && num <= 300 ? num : 90;
-    }
 
     validateHash(hash) {
         if (typeof hash !== 'string') return '00';
@@ -1064,7 +1183,7 @@ class MeshLog {
 
         this.dom_settings_types.append(
             this.__createCb(
-                "Direct Messages",
+                "Direct Messages to Bot",
                 "assets/img/message.png",
                 this.settings.types.direct_messages,
                 (e) => {
@@ -1075,35 +1194,6 @@ class MeshLog {
         );
 
         // Add radius slider
-        let radiusContainer = document.createElement('div');
-        radiusContainer.classList.add('settings-cb');
-        let radiusLabel = document.createElement('label');
-        radiusLabel.innerText = 'Hop Collision Radius: ';
-        let radiusSlider = document.createElement('input');
-        radiusSlider.type = 'range';
-        radiusSlider.min = '5';
-        radiusSlider.max = '300';
-        radiusSlider.value = '90';
-        radiusSlider.step = '5';
-        radiusSlider.style.width = '150px';
-        radiusSlider.onchange = (e) => {
-            this.settings.routeRadius = this.validateRadius(e.target.value);
-            
-            // Clear all existing paths so they can be redrawn with new radius
-            Object.keys(this.map_layers).forEach(pathId => {
-                this.hidePath(pathId);
-            });
-        };
-        let radiusValue = document.createElement('span');
-        radiusValue.innerText = '100km';
-        radiusValue.style.marginLeft = '10px';
-        radiusSlider.oninput = (e) => {
-            radiusValue.innerText = e.target.value + 'km';
-        };
-        radiusContainer.appendChild(radiusLabel);
-        radiusContainer.appendChild(radiusSlider);
-        radiusContainer.appendChild(radiusValue);
-        this.dom_settings_types.appendChild(radiusContainer);
 
         // Goat icon removed - was non-functional notification toggle
         // this.settings.notifications = false;
@@ -1474,7 +1564,6 @@ class MeshLog {
     validatePath(hashes, src) {
         const pathNodes = [];
         const contacts = this.contacts;
-        const routeRadius = this.settings.routeRadius;
         
         for (let i = 0; i < hashes.length; i++) {
             const candidates = [];
@@ -1494,7 +1583,9 @@ class MeshLog {
                 selectedNode = candidates[0];
             } else {
                 if (i === 0) {
+                    // First hop selection
                     if (src?.adv?.data?.lat && src?.adv?.data?.lon) {
+                        // Source has coordinates - select closest to source
                         let minDistance = Infinity;
                         const srcLat = src.adv.data.lat;
                         const srcLon = src.adv.data.lon;
@@ -1510,33 +1601,69 @@ class MeshLog {
                             }
                         }
                     } else {
-                        selectedNode = candidates[0];
+                        // Source has no coordinates - use context-aware selection
+                        // Look ahead to the second hop to make an informed decision
+                        if (hashes.length > 1) {
+                            const secondHopCandidates = [];
+                            const secondHash = hashes[1];
+                            
+                            for (const v of Object.values(contacts)) {
+                                if (v.hash === secondHash && v.adv && !v.adv.isExpired() && v.isRepeater()) {
+                                    secondHopCandidates.push(v);
+                                }
+                            }
+                            
+                            if (secondHopCandidates.length > 0) {
+                                // For each first-hop candidate, calculate distance to second hop
+                                let bestFirstHop = null;
+                                let minTotalDistance = Infinity;
+                                
+                                for (const firstHop of candidates) {
+                                    let minSecondHopDistance = Infinity;
+                                    
+                                    for (const secondHop of secondHopCandidates) {
+                                        const distance = this.calculateDistance(
+                                            firstHop.adv.data.lat, firstHop.adv.data.lon,
+                                            secondHop.adv.data.lat, secondHop.adv.data.lon
+                                        );
+                                        if (distance < minSecondHopDistance) {
+                                            minSecondHopDistance = distance;
+                                        }
+                                    }
+                                    
+                                    if (minSecondHopDistance < minTotalDistance) {
+                                        minTotalDistance = minSecondHopDistance;
+                                        bestFirstHop = firstHop;
+                                    }
+                                }
+                                
+                                selectedNode = bestFirstHop;
+                            } else {
+                                // No second hop candidates, fall back to first candidate
+                                selectedNode = candidates[0];
+                            }
+                        } else {
+                            // No second hop, fall back to first candidate
+                            selectedNode = candidates[0];
+                        }
                     }
                 } else {
+                    // Subsequent hops - always select closest to previous node
                     const previousNode = pathNodes[pathNodes.length - 1];
-                    const validCandidates = [];
                     const prevLat = previousNode.adv.data.lat;
                     const prevLon = previousNode.adv.data.lon;
                     
+                    let minDistance = Infinity;
                     for (const candidate of candidates) {
                         const distance = this.calculateDistance(
                             prevLat, prevLon,
                             candidate.adv.data.lat, candidate.adv.data.lon
                         );
-                        if (distance <= routeRadius) {
-                            validCandidates.push({candidate, distance});
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            selectedNode = candidate;
                         }
                     }
-                    
-                    if (validCandidates.length === 0) continue;
-                    
-                    let closest = validCandidates[0];
-                    for (let j = 1; j < validCandidates.length; j++) {
-                        if (validCandidates[j].distance < closest.distance) {
-                            closest = validCandidates[j];
-                        }
-                    }
-                    selectedNode = closest.candidate;
                 }
             }
             
@@ -1759,6 +1886,151 @@ class MeshLog {
             }
         }
         return false;
+    }
+
+    __init_translation() {
+        const self = this;
+        
+        // Load saved translation settings from localStorage
+        this.loadTranslationSettings();
+        
+        // Initialize translation controls
+        const fromSelect = document.getElementById('translation-from');
+        const toSelect = document.getElementById('translation-to');
+        const enabledCheckbox = document.getElementById('translation-enabled');
+
+        if (fromSelect) {
+            fromSelect.value = this.settings.translation.fromLang;
+            fromSelect.onchange = (e) => {
+                this.settings.translation.fromLang = e.target.value;
+                this.saveTranslationSettings();
+            };
+        }
+
+        if (toSelect) {
+            toSelect.value = this.settings.translation.toLang;
+            toSelect.onchange = (e) => {
+                this.settings.translation.toLang = e.target.value;
+                this.saveTranslationSettings();
+            };
+        }
+
+        if (enabledCheckbox) {
+            enabledCheckbox.checked = this.settings.translation.enabled;
+            enabledCheckbox.onchange = (e) => {
+                this.settings.translation.enabled = e.target.checked;
+                this.saveTranslationSettings();
+            };
+        }
+
+        const resetBtn = document.getElementById('reset-all-translations');
+        if (resetBtn) {
+            resetBtn.onclick = (e) => {
+                this.resetAllTranslations();
+            };
+        }
+    }
+
+    async translateText(text, fromLang = null, toLang = null) {
+        if (!this.settings.translation.enabled || !text || text.trim().length === 0) {
+            return null;
+        }
+
+        const from = fromLang || this.settings.translation.fromLang;
+        const to = toLang || this.settings.translation.toLang;
+
+        // Check cache first
+        const cacheKey = `${from}|${to}|${text}`;
+        if (this.settings.translation.cache[cacheKey]) {
+            return this.settings.translation.cache[cacheKey];
+        }
+
+        try {
+            const url = `api/v1/translate/index.php?text=${encodeURIComponent(text)}&from=${from}&to=${to}`;
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.success && data.translation) {
+                const translation = data.translation;
+                // Cache the translation
+                this.settings.translation.cache[cacheKey] = translation;
+                return translation;
+            } else {
+                console.warn('Translation failed:', data);
+                return null;
+            }
+        } catch (error) {
+            console.error('Translation error:', error);
+            return null;
+        }
+    }
+
+    loadTranslationSettings() {
+        try {
+            const savedSettings = localStorage.getItem('meshlog_translation_settings');
+            if (savedSettings) {
+                const settings = JSON.parse(savedSettings);
+                if (settings.fromLang) this.settings.translation.fromLang = settings.fromLang;
+                if (settings.toLang) this.settings.translation.toLang = settings.toLang;
+                if (typeof settings.enabled === 'boolean') this.settings.translation.enabled = settings.enabled;
+            }
+        } catch (error) {
+            console.warn('Failed to load translation settings:', error);
+        }
+    }
+
+    saveTranslationSettings() {
+        try {
+            const settings = {
+                fromLang: this.settings.translation.fromLang,
+                toLang: this.settings.translation.toLang,
+                enabled: this.settings.translation.enabled
+            };
+            localStorage.setItem('meshlog_translation_settings', JSON.stringify(settings));
+        } catch (error) {
+            console.warn('Failed to save translation settings:', error);
+        }
+    }
+
+    resetAllTranslations() {
+        // Clear all translation cache
+        this.settings.translation.cache = {};
+        
+        // Clear localStorage
+        try {
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.startsWith('translation_')) {
+                    localStorage.removeItem(key);
+                }
+            });
+        } catch (error) {
+            console.warn('Failed to clear localStorage:', error);
+        }
+        
+        // Reset all message groups
+        Object.entries(this.messages).forEach(([key, msgGroup]) => {
+            if (msgGroup.isTranslated) {
+                // Reset translation state
+                msgGroup.isTranslated = false;
+                msgGroup.originalText = null;
+                msgGroup.translatedText = null;
+                
+                // Reset display
+                const msg = msgGroup.first();
+                if (msg && msg.data.message) {
+                    msgGroup.dom.text.innerText = this.sanitizeText(msg.data.message);
+                }
+                
+                // Reset button
+                msgGroup.dom.translateBtn.innerText = "T";
+                msgGroup.dom.translateBtn.title = "Translate message";
+                msgGroup.dom.translateBtn.setAttribute("data-state", "translate");
+                msgGroup.dom.translateBtn.disabled = false;
+            }
+        });
+        
+        console.log('All translations reset to original');
     }
 }
 

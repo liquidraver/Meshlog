@@ -352,3 +352,123 @@ html {
     color: #444;
     font-size: 0.8em;
 }
+
+/* Translation controls */
+.translation-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.translation-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.translation-row label {
+    min-width: 40px;
+    font-size: 11px;
+    color: #888;
+}
+
+.translation-row select {
+    background: #262626;
+    color: #888;
+    border: 1px solid #444;
+    padding: 2px 4px;
+    font-size: 11px;
+    font-family: monospace;
+    border-radius: 2px;
+    flex: 1;
+}
+
+.translation-row select:focus {
+    outline: none;
+    border-color: #2a536d;
+}
+
+.translation-row input[type="checkbox"] {
+    margin-right: 4px;
+}
+
+.translation-row input[type="checkbox"] + label {
+    min-width: auto;
+    cursor: pointer;
+}
+
+/* Reset button */
+.reset-btn {
+    background: #ff9800;
+    color: #fff;
+    border: none;
+    padding: 4px 8px;
+    font-size: 11px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: monospace;
+    transition: background-color 0.2s ease;
+    width: 100%;
+}
+
+.reset-btn:hover {
+    background: #f57c00;
+}
+
+/* Translation button */
+.translate-btn {
+    background: #2a536d;
+    color: #fff;
+    border: none;
+    padding: 2px 6px;
+    font-size: 10px;
+    border-radius: 2px;
+    cursor: pointer;
+    margin-left: 4px;
+    font-family: monospace;
+    transition: background-color 0.2s ease;
+}
+
+.translate-btn:hover {
+    background: #3949AB;
+}
+
+.translate-btn:disabled {
+    background: #444;
+    color: #666;
+    cursor: not-allowed;
+}
+
+/* T button (translate) - light green */
+.translate-btn[data-state="translate"] {
+    background: #4CAF50;
+}
+
+.translate-btn[data-state="translate"]:hover {
+    background: #45a049;
+}
+
+/* O button (original) - light red */
+.translate-btn[data-state="original"] {
+    background: #f44336;
+}
+
+.translate-btn[data-state="original"]:hover {
+    background: #da190b;
+}
+
+/* Translation result */
+.translation-result {
+    margin-top: 4px;
+    padding: 4px;
+    background: #1a1a1a;
+    border-left: 2px solid #2a536d;
+    font-size: 11px;
+    color: #ccc;
+    font-style: italic;
+}
+
+.translation-loading {
+    color: #888;
+    font-style: italic;
+}

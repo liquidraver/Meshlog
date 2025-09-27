@@ -23,6 +23,42 @@
     </div>
     <div class="settings" id="settings-reporters">
     </div>
+    <div class="settings" id="settings-translation">
+        <div class="translation-controls">
+            <div class="translation-row">
+                <label>From:</label>
+                <select id="translation-from">
+                    <option value="auto">Auto-detect</option>
+                    <option value="sk" selected>Slovak</option>
+                    <option value="hu">Hungarian</option>
+                    <option value="en">English</option>
+                    <option value="de">German</option>
+                    <option value="cs">Czech</option>
+                    <option value="pl">Polish</option>
+                    <option value="ro">Romanian</option>
+                </select>
+            </div>
+            <div class="translation-row">
+                <label>To:</label>
+                <select id="translation-to">
+                    <option value="sk">Slovak</option>
+                    <option value="hu" selected>Hungarian</option>
+                    <option value="en">English</option>
+                    <option value="de">German</option>
+                    <option value="cs">Czech</option>
+                    <option value="pl">Polish</option>
+                    <option value="ro">Romanian</option>
+                </select>
+            </div>
+            <div class="translation-row">
+                <input type="checkbox" id="translation-enabled" checked>
+                <label for="translation-enabled">Enable Translation</label>
+            </div>
+            <div class="translation-row">
+                <button id="reset-all-translations" class="reset-btn">All to Original</button>
+            </div>
+        </div>
+    </div>
     <div id="logs"></div>
 </div>
 <div id="midbar">
