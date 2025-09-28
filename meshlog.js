@@ -799,7 +799,7 @@ class MeshLogMessageGroup extends MeshLogObject {
         } else if (msg instanceof MeshLogChannelMessage) {
             // Preserve translation state during auto-refresh
             if (!this.isTranslated) {
-                this.dom.text.innerText = this._meshlog.sanitizeText(msg.data.message);
+                this.dom.text.innerHTML = this._meshlog.sanitizeMessage(msg.data.message);
             }
             this.dom.name.style.color = '#d87dff'
             this.dom.text.style.color = 'white';
@@ -807,7 +807,7 @@ class MeshLogMessageGroup extends MeshLogObject {
         } else if (msg instanceof MeshLogDirecMessage) {
             // Preserve translation state during auto-refresh
             if (!this.isTranslated) {
-                this.dom.text.innerText = this._meshlog.sanitizeText(msg.data.message);
+                this.dom.text.innerHTML = this._meshlog.sanitizeMessage(msg.data.message);
             }
             this.dom.text.style.color = 'white';
             hidden = !this._meshlog.settings.types.direct_messages;
@@ -1019,6 +1019,19 @@ class MeshLog {
                 '&': '&amp;',
                 '"': '&quot;',
                 "'": '&#x27;'
+            };
+            return escapeMap[match];
+        });
+    }
+
+    sanitizeMessage(text) {
+        if (typeof text !== 'string') return '';
+        // Only escape the most dangerous characters for XSS in content
+        return text.replace(/[<>&]/g, (match) => {
+            const escapeMap = {
+                '<': '&lt;',
+                '>': '&gt;',
+                '&': '&amp;'
             };
             return escapeMap[match];
         });
@@ -2019,7 +2032,7 @@ class MeshLog {
                 // Reset display
                 const msg = msgGroup.first();
                 if (msg && msg.data.message) {
-                    msgGroup.dom.text.innerText = this.sanitizeText(msg.data.message);
+                    msgGroup.dom.text.innerHTML = this.sanitizeMessage(msg.data.message);
                 }
                 
                 // Reset button
