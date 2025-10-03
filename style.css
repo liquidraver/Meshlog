@@ -472,3 +472,141 @@ html {
     color: #888;
     font-style: italic;
 }
+
+/* Collision Helper Styles */
+.collision-helper-btn {
+    background: #3a4a5c !important;
+    border: 1px solid #5a6a7c !important;
+    color: #ddd !important;
+}
+
+.collision-helper-btn:hover {
+    background: #4a5a6c !important;
+    border-color: #6a7a8c !important;
+}
+
+.collision-helper-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.collision-helper-content {
+    background: #262626;
+    border: 2px solid #444;
+    border-radius: 8px;
+    max-width: 90%;
+    max-height: 90%;
+    overflow: auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.collision-helper-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid #444;
+    background: #1a1a1a;
+}
+
+.collision-helper-header h3 {
+    color: #ddd;
+    font-size: 16px;
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-btn:hover {
+    color: #ddd;
+    background: #444;
+    border-radius: 4px;
+}
+
+.collision-helper-table {
+    padding: 20px;
+}
+
+.hex-grid {
+    display: grid;
+    grid-template-columns: repeat(16, 1fr);
+    gap: 3px;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.hex-cell {
+    padding: 12px 8px;
+    text-align: center;
+    border: 1px solid #444;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hex-cell:hover {
+    transform: scale(1.1);
+    z-index: 10;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Color coding for hex cells */
+.hex-cell.unoccupied {
+    background: #2d4a2d;
+    color: #4a7c4a;
+    border-color: #4a7c4a;
+}
+
+.hex-cell.unoccupied:hover {
+    background: #3d5a3d;
+    border-color: #5a8c5a;
+}
+
+.hex-cell.occupied {
+    background: #4a2d2d;
+    color: #d4a5a5;
+    border-color: #8c5a5a;
+}
+
+.hex-cell.occupied:hover {
+    background: #5a3d3d;
+    border-color: #9c6a6a;
+}
+
+.hex-cell.colliding {
+    background: #1a1a1a;
+    color: #ffcc00;
+    border-color: #666;
+}
+
+.hex-cell.colliding:hover {
+    background: #2a2a2a;
+    border-color: #777;
+}

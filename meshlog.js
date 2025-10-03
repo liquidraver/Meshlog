@@ -1165,6 +1165,15 @@ class MeshLog {
             container.appendChild(btn);
         }
 
+        // Add Collision Helper button
+        let collisionBtn = document.createElement('button');
+        collisionBtn.classList.add('btn', 'collision-helper-btn');
+        collisionBtn.innerText = 'Collision Helper';
+        collisionBtn.onclick = (e) => {
+            this.showCollisionHelper();
+        };
+        container.appendChild(collisionBtn);
+
         this.dom_settings_contacts.appendChild(container);
     }
 
@@ -1462,6 +1471,101 @@ class MeshLog {
             contact.update();
         });
         this.sortContacts();
+    }
+
+    showCollisionHelper() {
+        // Create modal overlay
+        let modal = document.createElement('div');
+        modal.classList.add('collision-helper-modal');
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        };
+
+        // Create modal content
+        let modalContent = document.createElement('div');
+        modalContent.classList.add('collision-helper-content');
+        modalContent.onclick = (e) => e.stopPropagation();
+
+        // Create header
+        let header = document.createElement('div');
+        header.classList.add('collision-helper-header');
+        header.innerHTML = '<h3>Collision Helper</h3><button class="close-btn">&times;</button>';
+        header.querySelector('.close-btn').onclick = () => modal.remove();
+
+        // Create table container
+        let tableContainer = document.createElement('div');
+        tableContainer.classList.add('collision-helper-table');
+
+        // Generate collision data using existing logic
+        let hashes = {};
+        let repeaterContacts = {};
+
+        // Build the same collision detection as in onLoadContacts
+        Object.entries(this.contacts).forEach(([id, contact]) => {
+            let adv = Object.values(this.advertisements).reverse().find(item => item.data.contact_id == id);
+            if (!adv && contact.data.advertisement) {
+                adv = new MeshLogAdvertisement(this, contact.data.advertisement);
+            }
+            if (!adv) return;
+
+            let hashstr = contact.data.public_key.substr(0, 2).toLowerCase();
+            const isRepeater = adv && adv.data.type == 2;
+            
+            if (isRepeater) {
+                repeaterContacts[hashstr] = repeaterContacts[hashstr] || [];
+                repeaterContacts[hashstr].push({
+                    name: adv.data.name || 'Unknown',
+                    contact: contact
+                });
+
+                if (hashes.hasOwnProperty(hashstr)) {
+                    hashes[hashstr].forEach(c => c.flags.dupe = true);
+                    contact.flags.dupe = true;
+                } else {
+                    hashes[hashstr] = [];
+                }
+                hashes[hashstr].push(contact);
+            }
+        });
+
+        // Generate hex ID grid (01 to FE)
+        let grid = document.createElement('div');
+        grid.classList.add('hex-grid');
+
+        for (let i = 1; i <= 254; i++) { // 01 to FE (254 entries)
+            let hexId = i.toString(16).padStart(2, '0').toUpperCase();
+            let cell = document.createElement('div');
+            cell.classList.add('hex-cell');
+            cell.textContent = hexId;
+
+            // Determine status and color
+            if (repeaterContacts.hasOwnProperty(hexId.toLowerCase())) {
+                let contacts = repeaterContacts[hexId.toLowerCase()];
+                if (contacts.length > 1) {
+                    // Colliding - multiple repeaters with same ID
+                    cell.classList.add('colliding');
+                    cell.title = `Colliding IDs:\n${contacts.map(c => c.name).join('\n')}`;
+                } else {
+                    // Occupied - single repeater
+                    cell.classList.add('occupied');
+                    cell.title = `Occupied by: ${contacts[0].name}`;
+                }
+            } else {
+                // Unoccupied
+                cell.classList.add('unoccupied');
+                cell.title = 'Unoccupied';
+            }
+
+            grid.appendChild(cell);
+        }
+
+        tableContainer.appendChild(grid);
+        modalContent.appendChild(header);
+        modalContent.appendChild(tableContainer);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
     }
 
     addMessage(msg) {
