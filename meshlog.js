@@ -783,6 +783,8 @@ class MeshLogMessageGroup extends MeshLogObject {
                 displayName = "(Hungary) " + displayName;
             } else if (msg.data.channel_id === 3) {
                 displayName = "(#hungary) " + displayName;
+            } else if (msg.data.channel_id === 4) {
+                displayName = "(#ping) " + displayName;
             }
         }
         this.dom.name.innerText = displayName + ": ";
