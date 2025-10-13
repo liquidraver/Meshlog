@@ -1176,6 +1176,15 @@ class MeshLog {
         };
         container.appendChild(collisionBtn);
 
+        // Add Repeater Setup button
+        let repeaterSetupBtn = document.createElement('button');
+        repeaterSetupBtn.classList.add('btn', 'repeater-setup-btn');
+        repeaterSetupBtn.innerText = 'Repeater Setup';
+        repeaterSetupBtn.onclick = (e) => {
+            this.openRepeaterSetup();
+        };
+        container.appendChild(repeaterSetupBtn);
+
         this.dom_settings_contacts.appendChild(container);
     }
 
@@ -1568,6 +1577,23 @@ class MeshLog {
         modalContent.appendChild(tableContainer);
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
+    }
+
+    openRepeaterSetup() {
+        // Check if browser supports Web Serial API
+        if ('serial' in navigator) {
+            // Browser supports serial connections, open the page
+            window.open('https://map.mc868.hu/config/repeater-setup.html', '_blank');
+        } else {
+            // Browser doesn't support serial connections, show alert
+            alert('Serial Connection Not Supported\n\n' +
+                  'Your browser does not support Web Serial API which is required for the Repeater Setup.\n\n' +
+                  'Please use one of these browsers:\n' +
+                  '• Google Chrome (version 89+)\n' +
+                  '• Microsoft Edge (version 89+)\n' +
+                  '• Opera (version 75+)\n\n' +
+                  'Note: Serial API must be enabled in browser settings.');
+        }
     }
 
     addMessage(msg) {

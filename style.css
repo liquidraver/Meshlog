@@ -485,6 +485,18 @@ html {
     border-color: #6a7a8c !important;
 }
 
+/* Repeater Setup Button Styles */
+.repeater-setup-btn {
+    background: #2d5a3d !important;
+    border: 1px solid #4a7c4a !important;
+    color: #ddd !important;
+}
+
+.repeater-setup-btn:hover {
+    background: #3d6a4d !important;
+    border-color: #5a8c5a !important;
+}
+
 .collision-helper-modal {
     position: fixed;
     top: 0;
