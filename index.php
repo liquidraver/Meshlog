@@ -24,7 +24,11 @@
     <div class="settings" id="settings-reporters">
     </div>
     <div class="settings" id="settings-translation">
-        <div class="translation-controls">
+        <div class="settings-header" onclick="toggleTranslationSection()">
+            <span>Translation Settings</span>
+            <span id="translation-toggle" class="toggle-icon">▶</span>
+        </div>
+        <div class="translation-controls" id="translation-controls" style="display: none;">
             <div class="translation-row">
                 <label>From:</label>
                 <select id="translation-from">
@@ -255,6 +259,19 @@ function showWarning(msg) {
         warn.hidden = false;
     } else {
         warn.hidden = true;
+    }
+}
+
+function toggleTranslationSection() {
+    const controls = document.getElementById("translation-controls");
+    const toggle = document.getElementById("translation-toggle");
+    
+    if (controls.style.display === "none") {
+        controls.style.display = "flex";
+        toggle.innerText = "▼";
+    } else {
+        controls.style.display = "none";
+        toggle.innerText = "▶";
     }
 }
 

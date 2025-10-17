@@ -805,7 +805,20 @@ class MeshLogMessageGroup extends MeshLogObject {
             }
             this.dom.name.style.color = '#d87dff'
             this.dom.text.style.color = 'white';
-            hidden = !this._meshlog.settings.types.channel_messages;
+            
+            // Check channel-specific filters
+            let channelFiltered = false;
+            if (msg.data.channel_id === 1 && !this._meshlog.settings.channels.public) {
+                channelFiltered = true;
+            } else if (msg.data.channel_id === 2 && !this._meshlog.settings.channels.hungary) {
+                channelFiltered = true;
+            } else if (msg.data.channel_id === 3 && !this._meshlog.settings.channels.hungary_hash) {
+                channelFiltered = true;
+            } else if (msg.data.channel_id === 4 && !this._meshlog.settings.channels.ping) {
+                channelFiltered = true;
+            }
+            
+            hidden = !this._meshlog.settings.types.channel_messages || channelFiltered;
         } else if (msg instanceof MeshLogDirecMessage) {
             // Preserve translation state during auto-refresh
             if (!this.isTranslated) {
@@ -987,6 +1000,12 @@ class MeshLog {
                 channel_messages: true,
                 direct_messages: false,
             },
+            channels: {
+                public: true,
+                hungary: true,
+                hungary_hash: true,
+                ping: true,
+            },
             reporters: {
 
             },
@@ -1006,6 +1025,7 @@ class MeshLog {
         this.dom_settings_contacts = document.getElementById(scontactsid);
 
         this.__init_types();
+        this.__init_channels();
         this.__init_order();
         this.__init_translation();
 
@@ -1189,8 +1209,40 @@ class MeshLog {
     }
 
     __init_types() {
+        // Message type filters moved to __init_channels() - now called __init_filters()
+        // This function is kept for backward compatibility but is now empty
+    }
+
+    __init_channels() {
         const self = this;
-        this.dom_settings_types.appendChild(
+        
+        // Add filter section header
+        let channelHeader = document.createElement('div');
+        channelHeader.classList.add('settings-header');
+        channelHeader.innerHTML = '<span>Filters</span><span class="toggle-icon">▶</span>';
+        
+        let channelControls = document.createElement('div');
+        channelControls.classList.add('channel-controls');
+        channelControls.style.display = 'none';
+        channelControls.style.flexDirection = 'column';
+        channelControls.style.gap = '8px';
+        
+        // Add toggle functionality
+        channelHeader.onclick = () => {
+            if (channelControls.style.display === "none") {
+                channelControls.style.display = "flex";
+                channelHeader.querySelector('.toggle-icon').innerText = "▼";
+            } else {
+                channelControls.style.display = "none";
+                channelHeader.querySelector('.toggle-icon').innerText = "▶";
+            }
+        };
+        
+        this.dom_settings_types.appendChild(channelHeader);
+        this.dom_settings_types.appendChild(channelControls);
+
+        // Add existing message type filters
+        channelControls.appendChild(
             this.__createCb(
                 "Advertisements",
                 "assets/img/beacon.png",
@@ -1202,7 +1254,7 @@ class MeshLog {
             )
         );
 
-        this.dom_settings_types.appendChild(
+        channelControls.appendChild(
             this.__createCb(
                 "Channel Messages",
                 "assets/img/message.png",
@@ -1214,7 +1266,7 @@ class MeshLog {
             )
         );
 
-        this.dom_settings_types.append(
+        channelControls.appendChild(
             this.__createCb(
                 "Direct Messages to Bot",
                 "assets/img/message.png",
@@ -1226,20 +1278,54 @@ class MeshLog {
             )
         );
 
-        // Add radius slider
+        // Add channel filter checkboxes
+        channelControls.appendChild(
+            this.__createCb(
+                "Public Channel",
+                "assets/img/message.png",
+                this.settings.channels.public,
+                (e) => {
+                    this.settings.channels.public = e.target.checked;
+                    self.__onTypesChanged(e);
+                }
+            )
+        );
 
-        // Goat icon removed - was non-functional notification toggle
-        // this.settings.notifications = false;
-        // this.dom_settings_types.append(
-        //     this.__createCb(
-        //         "🐐",
-        //         "",
-        //         this.settings.notifications,
-        //         (e) => {
-        //             this.settings.notifications = e.target.checked;
-        //         }
-        //     )
-        // );
+        channelControls.appendChild(
+            this.__createCb(
+                "Hungary Channel",
+                "assets/img/message.png",
+                this.settings.channels.hungary,
+                (e) => {
+                    this.settings.channels.hungary = e.target.checked;
+                    self.__onTypesChanged(e);
+                }
+            )
+        );
+
+        channelControls.appendChild(
+            this.__createCb(
+                "#hungary Channel",
+                "assets/img/message.png",
+                this.settings.channels.hungary_hash,
+                (e) => {
+                    this.settings.channels.hungary_hash = e.target.checked;
+                    self.__onTypesChanged(e);
+                }
+            )
+        );
+
+        channelControls.appendChild(
+            this.__createCb(
+                "#ping Channel",
+                "assets/img/message.png",
+                this.settings.channels.ping,
+                (e) => {
+                    this.settings.channels.ping = e.target.checked;
+                    self.__onTypesChanged(e);
+                }
+            )
+        );
     }
 
     __init_reporters() {

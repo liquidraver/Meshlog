@@ -82,9 +82,10 @@ class MeshLogAdvertisement extends MeshLogEntity {
 
         if ($this->name == null) { $err .= 'no name,'; }
         if ($this->hash == null) { $err .= 'no hash,'; }
+        // Accept 0.0 coordinates for collision detection - they will be filtered out in display/routing
         if ($this->type != 1) {
-          if ($this->lat == null) { $err .= 'no lat,'; }
-          if ($this->lon == null) { $err .= 'no lon,'; }
+          if ($this->lat === null) { $err .= 'no lat,'; }
+          if ($this->lon === null) { $err .= 'no lon,'; }
         }
         if ($this->snr == null) { $err .= 'no snr,'; }
         if ($this->sent_at == null) { $err .= 'no sent_at,'; }
