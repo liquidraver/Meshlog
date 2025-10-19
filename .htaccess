@@ -32,3 +32,11 @@ Options -Indexes
 </FilesMatch>
 
 # PHP security settings are configured in php.ini or main Apache config
+
+# Password protection for delete node web interface
+<Files "delete_node_web.php">
+    AuthType Basic
+    AuthName "Meshlog Node Deletion - Enter Password"
+    AuthUserFile .htpasswd
+    Require valid-user
+</Files>
