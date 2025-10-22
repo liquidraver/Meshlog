@@ -1881,18 +1881,23 @@ class MeshLog {
                 } else {
                     // Subsequent hops - always select closest to previous node
                     const previousNode = pathNodes[pathNodes.length - 1];
-                    const prevLat = previousNode.adv.data.lat;
-                    const prevLon = previousNode.adv.data.lon;
-                    
-                    let minDistance = Infinity;
-                    for (const candidate of candidates) {
-                        const distance = this.calculateDistance(
-                            prevLat, prevLon,
-                            candidate.adv.data.lat, candidate.adv.data.lon
-                        );
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            selectedNode = candidate;
+                    if (!previousNode || !previousNode.adv || !previousNode.adv.data) {
+                        // No valid previous node, fall back to first candidate
+                        selectedNode = candidates[0];
+                    } else {
+                        const prevLat = previousNode.adv.data.lat;
+                        const prevLon = previousNode.adv.data.lon;
+                        
+                        let minDistance = Infinity;
+                        for (const candidate of candidates) {
+                            const distance = this.calculateDistance(
+                                prevLat, prevLon,
+                                candidate.adv.data.lat, candidate.adv.data.lon
+                            );
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                selectedNode = candidate;
+                            }
                         }
                     }
                 }
