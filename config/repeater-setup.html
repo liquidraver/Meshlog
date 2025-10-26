@@ -103,6 +103,12 @@
             <div class="form-group">
                 <label>Desired ID (first 2 chars):</label>
                 <input type="text" id="desiredId" maxlength="2" placeholder="AB" pattern="[0-9A-Fa-f]{2}">
+                <div style="font-size: 11px; color: #888; margin-top: 4px;">
+                    Valid range: 01-FE (00 and FF cannot be generated)
+                </div>
+                <div id="invalidIdWarning" style="display: none; color: #f87171; font-size: 12px; margin-top: 4px; font-weight: bold;">
+                    ⚠ Warning: IDs starting with 00 or FF cannot be generated
+                </div>
             </div>
             <div class="button-row">
                 <button id="btnAutoChoose" class="btn">Auto-Choose Non-Colliding</button>

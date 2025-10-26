@@ -50,6 +50,10 @@ class RepeaterSetup {
         
         // Clear compliance status when private key is manually modified
         document.getElementById('privateKey').addEventListener('input', () => this.clearComplianceStatus());
+        
+        // Validate desired ID input for invalid values (00, FF)
+        document.getElementById('desiredId').addEventListener('input', (e) => this.validateDesiredId(e.target.value));
+        document.getElementById('desiredId').addEventListener('blur', (e) => this.validateDesiredId(e.target.value));
         document.getElementById('btnSetACL').addEventListener('click', () => this.setACL());
         document.getElementById('btnApplyRadio').addEventListener('click', () => this.applyRadioSettings());
         document.getElementById('preset').addEventListener('change', (e) => this.applyPreset(e.target.value));
@@ -1234,11 +1238,36 @@ class RepeaterSetup {
         }
     }
 
+    validateDesiredId(value) {
+        const warningEl = document.getElementById('invalidIdWarning');
+        if (!warningEl) return;
+        
+        if (value && value.length === 2) {
+            const upper = value.toUpperCase();
+            if (upper === '00' || upper === 'FF') {
+                warningEl.style.display = 'block';
+                return false;
+            } else {
+                warningEl.style.display = 'none';
+                return true;
+            }
+        }
+        warningEl.style.display = 'none';
+        return true;
+    }
+
     async generateKeys() {
         const desiredId = document.getElementById('desiredId').value;
         
         if (!desiredId || desiredId.length !== 2 || !/^[0-9A-Fa-f]{2}$/.test(desiredId)) {
             alert('Please enter a valid 2-character hex ID');
+            return;
+        }
+        
+        // Check for invalid IDs that cannot be generated
+        const upperId = desiredId.toUpperCase();
+        if (upperId === '00' || upperId === 'FF') {
+            alert('IDs starting with "00" or "FF" cannot be generated.\n\nValid Ed25519 public keys never start with these values.\n\nPlease choose an ID between 01-FE.');
             return;
         }
 
