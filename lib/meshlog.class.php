@@ -131,8 +131,18 @@ class MeshLog {
         $channel = MeshLogChannel::findBy("hash", $hash, $this);
 
         if (!$channel) {
+            // Channel doesn't exist, create it
             $channel = MeshLogChannel::fromJson($data, $this);
             if (!$channel->save($this)) return $this->repError('failed to save channel');
+        } else {
+            // Channel exists - only update name if current name is "unknown" and JSON has a better one
+            if (($channel->name === 'unknown' || $channel->name === null || $channel->name === '')) {
+                $json_name = $data['channel']['name'] ?? null;
+                if ($json_name && $json_name !== 'unknown') {
+                    $channel->name = $json_name;
+                    $channel->save($this);
+                }
+            }
         }
 
         $advertisement = MeshLogAdvertisement::findBy("name", $name, $this);

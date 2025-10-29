@@ -20,7 +20,7 @@ class MeshLogChannel extends MeshLogEntity {
     public static function fromDb($data, $meshlog) {
         if (!$data) return null;
 
-        $m = new MeshLogReporter($meshlog);
+        $m = new MeshLogChannel($meshlog);
 
         $m->_id = $data['id'];
         $m->hash = $data['hash'];
@@ -40,8 +40,9 @@ class MeshLogChannel extends MeshLogEntity {
     public function asArray() {
         return array(
             'id' => $this->getId(),
-            'hash' => $this->hasj,
+            'hash' => $this->hash,
             'name' => $this->name,
+            'enabled' => $this->enabled,
             'created_at' => $this->created_at
         );
     }

@@ -775,16 +775,11 @@ class MeshLogMessageGroup extends MeshLogObject {
         
         // Add channel name prefix for channel messages
         let displayName = this._meshlog.sanitizeText(msg.data.name);
-        if (msg instanceof MeshLogChannelMessage) {
-            // Map channel_id to channel name
-            if (msg.data.channel_id === 1) {
-                displayName = "(Public) " + displayName;
-            } else if (msg.data.channel_id === 2) {
-                displayName = "(Hungary) " + displayName;
-            } else if (msg.data.channel_id === 3) {
-                displayName = "(#hungary) " + displayName;
-            } else if (msg.data.channel_id === 4) {
-                displayName = "(#ping) " + displayName;
+        if (msg instanceof MeshLogChannelMessage && msg.data.channel_id) {
+            // Get channel from database using channel_id
+            const channel = this._meshlog.channels[msg.data.channel_id];
+            if (channel && channel.data.name) {
+                displayName = "(" + channel.data.name + ") " + displayName;
             }
         }
         this.dom.name.innerText = displayName + ": ";
@@ -806,16 +801,19 @@ class MeshLogMessageGroup extends MeshLogObject {
             this.dom.name.style.color = '#d87dff'
             this.dom.text.style.color = 'white';
             
-            // Check channel-specific filters
+            // Check channel-specific filters using database channel names
             let channelFiltered = false;
-            if (msg.data.channel_id === 1 && !this._meshlog.settings.channels.public) {
-                channelFiltered = true;
-            } else if (msg.data.channel_id === 2 && !this._meshlog.settings.channels.hungary) {
-                channelFiltered = true;
-            } else if (msg.data.channel_id === 3 && !this._meshlog.settings.channels.hungary_hash) {
-                channelFiltered = true;
-            } else if (msg.data.channel_id === 4 && !this._meshlog.settings.channels.ping) {
-                channelFiltered = true;
+            if (msg.data.channel_id) {
+                const channel = this._meshlog.channels[msg.data.channel_id];
+                if (channel && channel.data.name) {
+                    const channelName = channel.data.name.toLowerCase();
+                    const channelKey = channelName.replace(/[^a-z0-9]/g, '_');
+                    // Get setting key, defaulting to true if not found
+                    const channelSetting = this._meshlog.settings.channels[channelKey];
+                    if (channelSetting === false) {
+                        channelFiltered = true;
+                    }
+                }
             }
             
             hidden = !this._meshlog.settings.types.channel_messages || channelFiltered;
@@ -1227,6 +1225,9 @@ class MeshLog {
         channelControls.style.flexDirection = 'column';
         channelControls.style.gap = '8px';
         
+        // Store reference for later updates
+        this.dom_channel_controls = channelControls;
+        
         // Add toggle functionality
         channelHeader.onclick = () => {
             if (channelControls.style.display === "none") {
@@ -1278,54 +1279,65 @@ class MeshLog {
             )
         );
 
-        // Add channel filter checkboxes
-        channelControls.appendChild(
-            this.__createCb(
-                "Public Channel",
-                "assets/img/message.png",
-                this.settings.channels.public,
-                (e) => {
-                    this.settings.channels.public = e.target.checked;
-                    self.__onTypesChanged(e);
-                }
-            )
-        );
+        // Channel filter checkboxes will be created dynamically when channels load
+        // (Don't call __refreshChannelFilters() here - channels aren't loaded yet)
+    }
 
-        channelControls.appendChild(
-            this.__createCb(
-                "Hungary Channel",
+    __refreshChannelFilters() {
+        if (!this.dom_channel_controls) return; // Not initialized yet
+        
+        // Remove existing channel filter checkboxes (keep message type filters)
+        // Find all checkboxes that are channel filters (they follow message type filters)
+        const existingCheckboxes = this.dom_channel_controls.querySelectorAll('.channel-filter');
+        existingCheckboxes.forEach(cb => cb.remove());
+        
+        // Create checkboxes for each channel from database
+        const channelCount = Object.keys(this.channels).length;
+        if (channelCount === 0) {
+            // No channels loaded yet, filters will be created when channels load
+            return;
+        }
+        
+        Object.entries(this.channels).forEach(([id, channel]) => {
+            if (!channel || !channel.data) {
+                console.warn(`Channel ${id} has no data`);
+                return;
+            }
+            
+            // enabled might be 0/1 from DB or true/false, check both
+            if (channel.data.enabled === false || channel.data.enabled === 0) {
+                return; // Skip disabled channels
+            }
+            
+            const channelName = channel.data.name || 'unknown';
+            if (!channelName || channelName === 'unknown') {
+                console.warn(`Channel ${id} has no valid name`);
+                return;
+            }
+            
+            const channelKey = channelName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            
+            // Initialize setting if it doesn't exist (default to true)
+            if (this.settings.channels[channelKey] === undefined) {
+                this.settings.channels[channelKey] = true;
+            }
+            
+            const checkboxContainer = this.__createCb(
+                channelName + " Channel",
                 "assets/img/message.png",
-                this.settings.channels.hungary,
+                this.settings.channels[channelKey],
                 (e) => {
-                    this.settings.channels.hungary = e.target.checked;
-                    self.__onTypesChanged(e);
+                    this.settings.channels[channelKey] = e.target.checked;
+                    this.__onTypesChanged(e);
                 }
-            )
-        );
-
-        channelControls.appendChild(
-            this.__createCb(
-                "#hungary Channel",
-                "assets/img/message.png",
-                this.settings.channels.hungary_hash,
-                (e) => {
-                    this.settings.channels.hungary_hash = e.target.checked;
-                    self.__onTypesChanged(e);
-                }
-            )
-        );
-
-        channelControls.appendChild(
-            this.__createCb(
-                "#ping Channel",
-                "assets/img/message.png",
-                this.settings.channels.ping,
-                (e) => {
-                    this.settings.channels.ping = e.target.checked;
-                    self.__onTypesChanged(e);
-                }
-            )
-        );
+            );
+            checkboxContainer.classList.add('channel-filter');
+            this.dom_channel_controls.appendChild(checkboxContainer);
+            
+            console.log(`Added filter for channel: ${channelName} (key: ${channelKey})`);
+        });
+        
+        console.log(`Channel filters refreshed. Total channels: ${channelCount}, Filters created: ${this.dom_channel_controls.querySelectorAll('.channel-filter').length}`);
     }
 
     __init_reporters() {
@@ -1517,6 +1529,8 @@ class MeshLog {
             if (rep6.length) console.log(`${rep6.length} direct messages loaded`);
 
             this.__init_reporters();
+            // Refresh channel filters after channels are loaded
+            this.__refreshChannelFilters();
             this.onLoadAll();
 
             if (onload) {
