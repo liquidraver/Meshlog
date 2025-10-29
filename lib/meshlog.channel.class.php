@@ -11,7 +11,9 @@ class MeshLogChannel extends MeshLogEntity {
     public static function fromJson($data, $meshlog) {
         $m = new MeshLogChannel($meshlog);
 
-        $m->hash = $data['channel']['hash'] ?? '11';
+        // Normalize hash to uppercase for consistent storage
+        $hash = $data['channel']['hash'] ?? '11';
+        $m->hash = strtoupper(trim($hash));
         $m->name = $data['channel']['name'] ?? 'unknown';
         $m->enabled = true; // default
 
@@ -24,7 +26,8 @@ class MeshLogChannel extends MeshLogEntity {
         $m = new MeshLogChannel($meshlog);
 
         $m->_id = $data['id'];
-        $m->hash = $data['hash'];
+        // Normalize hash to uppercase (in case DB has mixed case)
+        $m->hash = strtoupper(trim($data['hash'] ?? '11'));
         $m->name = $data['name'];
         $m->enabled = $data['enabled'];
         $m->created_at = $data['created_at'] ?? null;

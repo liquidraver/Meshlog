@@ -825,8 +825,7 @@ class MeshLogMessageGroup extends MeshLogObject {
             this.dom.text.style.color = 'white';
             hidden = !this._meshlog.settings.types.direct_messages;
         } else {
-            console.log("unkn instance");
-            // ????
+            // Unknown instance type
         }
 
         let allvis = Object.keys(this._meshlog.visible_contacts).length < 1;
@@ -1097,12 +1096,10 @@ class MeshLog {
     }
 
     __onTypesChanged() {
-        console.log(this.settings.types);
         this.update();
     }
 
     __onReportersChanged() {
-        console.log(this.reporters);
         //this.updateReporters();
     }
 
@@ -1300,7 +1297,6 @@ class MeshLog {
         
         Object.entries(this.channels).forEach(([id, channel]) => {
             if (!channel || !channel.data) {
-                console.warn(`Channel ${id} has no data`);
                 return;
             }
             
@@ -1311,7 +1307,6 @@ class MeshLog {
             
             const channelName = channel.data.name || 'unknown';
             if (!channelName || channelName === 'unknown') {
-                console.warn(`Channel ${id} has no valid name`);
                 return;
             }
             
@@ -1333,11 +1328,7 @@ class MeshLog {
             );
             checkboxContainer.classList.add('channel-filter');
             this.dom_channel_controls.appendChild(checkboxContainer);
-            
-            console.log(`Added filter for channel: ${channelName} (key: ${channelKey})`);
         });
-        
-        console.log(`Channel filters refreshed. Total channels: ${channelCount}, Filters created: ${this.dom_channel_controls.querySelectorAll('.channel-filter').length}`);
     }
 
     __init_reporters() {
@@ -1489,22 +1480,19 @@ class MeshLog {
         });
 
         this.__fetchQuery({ "before_ms": oldest_adv }, 'api/v1/advertisements', data => {
-            const rep = self.__loadObjects(self.advertisements, data, MeshLogAdvertisement);
-            if (rep.length) console.log(`${rep.length} advertisements loaded`);
+            self.__loadObjects(self.advertisements, data, MeshLogAdvertisement);
             self.onLoadAll();
             if (onload) onload();
         });
 
         this.__fetchQuery({ "before_ms": oldest_grp }, 'api/v1/channel_messages', data => {
-            const rep = self.__loadObjects(self.channel_messages, data, MeshLogChannelMessage);
-            if (rep.length) console.log(`${rep.length} group messages loaded`);
+            self.__loadObjects(self.channel_messages, data, MeshLogChannelMessage);
             self.onLoadAll();
             if (onload) onload();
         });
 
         this.__fetchQuery({ "before_ms": oldest_dm }, 'api/v1/direct_messages', data => {
-            const rep = self.__loadObjects(self.direct_messages, data, MeshLogDirecMessage);
-            if (rep.length) console.log(`${rep.length} direct messages loaded`);
+            self.__loadObjects(self.direct_messages, data, MeshLogDirecMessage);
             self.onLoadAll();
             if (onload) onload();
         });
@@ -1513,20 +1501,12 @@ class MeshLog {
 
     loadAll(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/all', data => {
-            const rep1 = this.__loadObjects(this.reporters, data.reporters, MeshLogReporter);
-            const rep2 = this.__loadObjects(this.contacts, data.contacts, MeshLogContact);
-            const rep4 = this.__loadObjects(this.channels, data.channels, MeshLogChannel);
-
-            const rep3 = this.__loadObjects(this.advertisements, data.advertisements, MeshLogAdvertisement);
-            const rep5 = this.__loadObjects(this.channel_messages, data.channel_messages, MeshLogChannelMessage);
-            const rep6 = this.__loadObjects(this.direct_messages, data.direct_messages, MeshLogDirecMessage);
-
-            if (rep1.length) console.log(`${rep1.length} reporters loaded`);
-            if (rep2.length) console.log(`${rep2.length} contacts loaded`);
-            if (rep3.length) console.log(`${rep3.length} advertisements loaded`);
-            if (rep4.length) console.log(`${rep4.length} groups loaded`);
-            if (rep5.length) console.log(`${rep5.length} group messages loaded`);
-            if (rep6.length) console.log(`${rep6.length} direct messages loaded`);
+            this.__loadObjects(this.reporters, data.reporters, MeshLogReporter);
+            this.__loadObjects(this.contacts, data.contacts, MeshLogContact);
+            this.__loadObjects(this.channels, data.channels, MeshLogChannel);
+            this.__loadObjects(this.advertisements, data.advertisements, MeshLogAdvertisement);
+            this.__loadObjects(this.channel_messages, data.channel_messages, MeshLogChannelMessage);
+            this.__loadObjects(this.direct_messages, data.direct_messages, MeshLogDirecMessage);
 
             this.__init_reporters();
             // Refresh channel filters after channels are loaded
@@ -1746,48 +1726,42 @@ class MeshLog {
 
     loadReporters(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/reporters', data => {
-            const sz = this.__loadObjects(this.reporters, data, MeshLogObject);
-            console.log(`${sz} reporters loaded`);
+            this.__loadObjects(this.reporters, data, MeshLogObject);
             if (onload) onload();
         });
     }
 
     loadContacts(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/contacts', data => {
-            const sz = this.__loadObjects(this.contacts, data, MeshLogContact);
-            console.log(`${sz} contacts loaded`);
+            this.__loadObjects(this.contacts, data, MeshLogContact);
             if (onload) onload();
         });
     }
 
     loadAdvertisements(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/advertisements', data => {
-            const sz = this.__loadObjects(this.advertisements, data, MeshLogAdvertisement);
-            console.log(`${sz} advertisements loaded`);
+            this.__loadObjects(this.advertisements, data, MeshLogAdvertisement);
             if (onload) onload();
         });
     }
 
     loadChannels(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/channels', data => {
-            const sz = this.__loadObjects(this.channels, data, MeshLogObject);
-            console.log(`${sz} channels loaded`);
+            this.__loadObjects(this.channels, data, MeshLogObject);
             if (onload) onload();
         });
     }
 
     loadChannelMessages(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/channel_messages', data => {
-            const sz = this.__loadObjects(this.channel_messages, data, MeshLogChannelMessage);
-            console.log(`${sz} channels messages loaded`);
+            this.__loadObjects(this.channel_messages, data, MeshLogChannelMessage);
             if (onload) onload();
         });
     }
 
     loadDirectMessages(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/direct_messages', data => {
-            const sz = this.__loadObjects(this.direct_messages, data, MeshLogDirecMessage);
-            console.log(`${sz} direct messages loaded`);
+            this.__loadObjects(this.direct_messages, data, MeshLogDirecMessage);
             if (onload) onload();
         });
     }

@@ -123,6 +123,8 @@ class MeshLog {
         if (!$reporter) return $this->repError('no reporter');
 
         $hash = $data['channel']['hash'] ?? '11';
+        // Normalize hash to uppercase for consistent comparison
+        $hash = strtoupper(trim($hash));
         $text = $data['message']['text'] ?? null;
         
         if (!$text) return $this->repError('no message');
@@ -137,23 +139,23 @@ class MeshLog {
         } else {
             // Channel exists - update name if JSON has a better one (not 'unknown' and different from current)
             $json_name = $data['channel']['name'] ?? null;
-            $current_name = $channel->name ?? '';
-            $current_name_lower = strtolower(trim($current_name));
             
-            // Log for debugging
-            if ($json_name && $json_name !== 'unknown') {
-                error_log("Channel update check - Hash: $hash, Current: '$current_name', JSON: '$json_name'");
-            }
-            
-            if ($json_name && $json_name !== 'unknown') {
-                // Only update if current name is 'unknown', null, or empty
+            if ($json_name && $json_name !== 'unknown' && trim($json_name) !== '') {
+                $current_name_trimmed = trim($channel->name ?? '');
+                $current_name_lower = strtolower($current_name_trimmed);
+                
+                // Update if current name is 'unknown', null, empty, or actually different
+                $should_update = false;
                 if ($current_name_lower === 'unknown' || $current_name_lower === '' || $channel->name === null) {
-                    $channel->name = $json_name;
-                    if ($channel->save($this)) {
-                        error_log("Successfully updated channel hash $hash name from '$current_name' to '$json_name'");
-                    } else {
-                        error_log("Failed to update channel name for hash $hash to $json_name");
-                    }
+                    $should_update = true;
+                } elseif (strtolower(trim($json_name)) !== $current_name_lower) {
+                    // Also update if names are actually different (case-insensitive)
+                    $should_update = true;
+                }
+                
+                if ($should_update) {
+                    $channel->name = trim($json_name);
+                    $channel->save($this);
                 }
             }
         }
