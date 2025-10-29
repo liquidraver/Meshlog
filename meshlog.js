@@ -658,6 +658,7 @@ class MeshLogMessageGroup extends MeshLogObject {
 
         let text = document.createElement("span");
         text.classList.add("sp");
+        text.classList.add("message-text");
 
         let right = document.createElement("span");
         right.style.marginLeft= 'auto';
@@ -1045,8 +1046,9 @@ class MeshLog {
 
     sanitizeMessage(text) {
         if (typeof text !== 'string') return '';
-        // Only escape the most dangerous characters for XSS in content
-        return text.replace(/[<>&]/g, (match) => {
+        
+        // First escape the most dangerous characters for XSS in content
+        let escaped = text.replace(/[<>&]/g, (match) => {
             const escapeMap = {
                 '<': '&lt;',
                 '>': '&gt;',
@@ -1054,6 +1056,10 @@ class MeshLog {
             };
             return escapeMap[match];
         });
+        
+        // Then convert URLs to clickable links
+        const urlRegex = /(https?:\/\/[^\s<>"']+)/gi;
+        return escaped.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
     }
 
     sanitizeColor(color) {
@@ -1515,12 +1521,12 @@ class MeshLog {
 
             if (onload) {
                 onload({
-                    reporters: rep1,
-                    contacts: rep2,
-                    groups: rep4,
-                    advertisements: rep3,
-                    channel_messages: rep5,
-                    direct_messages: rep6,
+                    reporters: data.reporters,
+                    contacts: data.contacts,
+                    groups: data.channels,
+                    advertisements: data.advertisements,
+                    channel_messages: data.channel_messages,
+                    direct_messages: data.direct_messages,
                 });
             }
         });

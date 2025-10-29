@@ -111,6 +111,19 @@ html {
     display: inline-block;
 }
 
+.message-text a {
+    color: #5394EC !important;
+    text-decoration: underline;
+}
+
+.message-text a:visited {
+    color: #5394EC !important;
+}
+
+.message-text a:hover {
+    color: #7FB5F5 !important;
+}
+
 .mp {
     color: #666e77;
 }
