@@ -74,7 +74,7 @@
 <div id="rightbar">
     <div class="settings" id="settings-contacts">
     </div>
-    <div class="settings" id="about">EmpireMesh Web v1867 <span>Forked from <a href="https://github.com/Anrijs/Meshlog" target="_blank" rel="noopener noreferrer">Anrijs/Meshlog</a></span></div>
+    <div class="settings" id="about">EmpireMesh Web v1867 <span>forked from <a href="https://github.com/Anrijs/Meshlog" target="_blank" rel="noopener noreferrer">Anrijs/Meshlog</a></span></div>
     <div id="contacts"></div>
 </div>
 </div>
