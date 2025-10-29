@@ -71,7 +71,7 @@ class MeshLog {
                 break;
         }
 
-        error_log("Unknowwn type: $type");
+        error_log("Unknown type: $type");
     }
 
     private function insertAdvertisement($data, $reporter) {
@@ -135,12 +135,25 @@ class MeshLog {
             $channel = MeshLogChannel::fromJson($data, $this);
             if (!$channel->save($this)) return $this->repError('failed to save channel');
         } else {
-            // Channel exists - only update name if current name is "unknown" and JSON has a better one
-            if (($channel->name === 'unknown' || $channel->name === null || $channel->name === '')) {
-                $json_name = $data['channel']['name'] ?? null;
-                if ($json_name && $json_name !== 'unknown') {
+            // Channel exists - update name if JSON has a better one (not 'unknown' and different from current)
+            $json_name = $data['channel']['name'] ?? null;
+            $current_name = $channel->name ?? '';
+            $current_name_lower = strtolower(trim($current_name));
+            
+            // Log for debugging
+            if ($json_name && $json_name !== 'unknown') {
+                error_log("Channel update check - Hash: $hash, Current: '$current_name', JSON: '$json_name'");
+            }
+            
+            if ($json_name && $json_name !== 'unknown') {
+                // Only update if current name is 'unknown', null, or empty
+                if ($current_name_lower === 'unknown' || $current_name_lower === '' || $channel->name === null) {
                     $channel->name = $json_name;
-                    $channel->save($this);
+                    if ($channel->save($this)) {
+                        error_log("Successfully updated channel hash $hash name from '$current_name' to '$json_name'");
+                    } else {
+                        error_log("Failed to update channel name for hash $hash to $json_name");
+                    }
                 }
             }
         }

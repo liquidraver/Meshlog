@@ -27,12 +27,13 @@ class MeshLogAdvertisement extends MeshLogEntity {
 
         $m->hash = $data['hash'] ?? null;
         $m->name = $data['contact']['name'] ?? null;
-        $m->lat = floatval($data['contact']['lat']) ?? 0.0;
-        $m->lon = floatval($data['contact']['lon']) ?? 0.0;
+        $m->lat = isset($data['contact']['lat']) ? floatval($data['contact']['lat']) : 0.0;
+        $m->lon = isset($data['contact']['lon']) ? floatval($data['contact']['lon']) : 0.0;
         $m->path = $data['message']['path'] ?? null;
-        $m->snr = $data['snr'] ?: null;
-        $m->type = $data['contact']['type'] ?: 0;
-        $m->flags = $data['contact']['flags'] ?: 0;
+        // Fixed: was ?: which treats 0 as falsy. Now 0 is preserved, missing defaults to 0.0
+        $m->snr = isset($data['snr']) ? floatval($data['snr']) : 0.0;
+        $m->type = isset($data['contact']['type']) ? intval($data['contact']['type']) : 0;
+        $m->flags = isset($data['contact']['flags']) ? intval($data['contact']['flags']) : 0;
 
         $m->lat /= 1000000.0;
         $m->lon /= 1000000.0;
@@ -87,7 +88,8 @@ class MeshLogAdvertisement extends MeshLogEntity {
           if ($this->lat === null) { $err .= 'no lat,'; }
           if ($this->lon === null) { $err .= 'no lon,'; }
         }
-        if ($this->snr == null) { $err .= 'no snr,'; }
+        // SNR defaults to 0.0 if missing, so check for null explicitly
+        if ($this->snr === null) { $err .= 'no snr,'; }
         if ($this->sent_at == null) { $err .= 'no sent_at,'; }
         if ($this->received_at == null) { $err .= 'no received_at,'; }
 

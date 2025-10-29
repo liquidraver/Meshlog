@@ -6,6 +6,7 @@ class MeshLogChannel extends MeshLogEntity {
     public $hash = null;
     public $name = null;
     public $enabled = null;
+    public $created_at = null;
 
     public static function fromJson($data, $meshlog) {
         $m = new MeshLogChannel($meshlog);
@@ -26,6 +27,7 @@ class MeshLogChannel extends MeshLogEntity {
         $m->hash = $data['hash'];
         $m->name = $data['name'];
         $m->enabled = $data['enabled'];
+        $m->created_at = $data['created_at'] ?? null;
 
         return $m;
     }
@@ -43,7 +45,7 @@ class MeshLogChannel extends MeshLogEntity {
             'hash' => $this->hash,
             'name' => $this->name,
             'enabled' => $this->enabled,
-            'created_at' => $this->created_at
+            'created_at' => $this->created_at ?? null
         );
     }
 
