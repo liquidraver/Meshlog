@@ -1454,12 +1454,12 @@ class RepeaterSetup {
             } catch (error) {
                 console.error('Failed to load noble-ed25519 from Skypack, trying offline fallback:', error);
                 try {
-                    // Use offline fallback
-                    this.nobleEd25519 = await import('./noble-ed25519-offline-simple.js');
+                    // Use offline fallback - full CDN version saved locally
+                    this.nobleEd25519 = await import('./noble-ed25519-offline.js');
                     console.log('✓ noble-ed25519 loaded successfully (offline fallback)');
                 } catch (offlineError) {
                     console.error('Failed to load noble-ed25519 from all sources:', offlineError);
-                    throw new Error('Failed to load Ed25519 library. Please check your internet connection and ensure noble-ed25519-offline-simple.js is available.');
+                    throw new Error('Failed to load Ed25519 library. Please check your internet connection and ensure noble-ed25519-offline.js is available.');
                 }
             }
         }
