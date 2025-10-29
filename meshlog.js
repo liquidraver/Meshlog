@@ -2059,7 +2059,7 @@ class MeshLog {
                 }
 
                 document.getElementById('favicon').setAttribute('href','faviconr.ico');
-                document.title = `(${count}) MeshCore Log`; 
+                document.title = `(${count}) EmpireMesh Log`; 
             }
         });
         this.setAutorefresh(this.interval);
@@ -2094,7 +2094,7 @@ class MeshLog {
     clearNotifications() {
         this.new_messages = [];
         document.getElementById('favicon').setAttribute('href','faviconw.ico');
-        document.title = `MeshCore Log`; 
+        document.title = `EmpireMesh Log`; 
     }
 
     showAllPaths() {

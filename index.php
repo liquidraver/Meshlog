@@ -13,7 +13,7 @@
     <script src=" https://cdn.jsdelivr.net/npm/leaflet-polylineoffset@1.1.1/leaflet.polylineoffset.min.js "></script>
     <script src="meshlog.js"></script>
     <link rel="stylesheet" href="style.css">
-    <title>MeshCore Log v1.99</title>
+    <title>EmpireMesh Log</title>
 </head>
 <body>
 
@@ -74,7 +74,7 @@
 <div id="rightbar">
     <div class="settings" id="settings-contacts">
     </div>
-    <div class="settings" id="about">MeshLog Web v1.99</div>
+    <div class="settings" id="about">EmpireMesh Web v1867 <span>Forked from <a href="https://github.com/Anrijs/Meshlog" target="_blank" rel="noopener noreferrer">Anrijs/Meshlog</a></span></div>
     <div id="contacts"></div>
 </div>
 </div>
