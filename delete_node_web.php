@@ -26,7 +26,7 @@ function getNodeTypeFromAdType($adType) {
 // Function to list all contacts with sorting
 function listContacts($pdo, $sortBy = 'id', $sortOrder = 'ASC') {
     // Validate sort column
-    $allowedColumns = ['id', 'name', 'public_key', 'enabled', 'created_at', 'type'];
+    $allowedColumns = ['id', 'name', 'public_key', 'enabled', 'created_at', 'type', 'last_advert_time'];
     if (!in_array($sortBy, $allowedColumns)) {
         $sortBy = 'id';
     }
@@ -37,22 +37,35 @@ function listContacts($pdo, $sortBy = 'id', $sortOrder = 'ASC') {
         $sortOrder = 'ASC';
     }
     
-    // Join with advertisements to get the latest type for each contact
+    // Join with advertisements to get the latest type and time for each contact
     $orderBy = $sortBy;
     if ($sortBy === 'type') {
         $orderBy = 'ad_type';
+    } elseif ($sortBy === 'last_advert_time') {
+        // Handle NULLs - put them at the end regardless of sort order
+        if ($sortOrder === 'ASC') {
+            $orderBy = 'ISNULL(last_advert_created_at), last_advert_created_at';
+        } else {
+            $orderBy = 'ISNULL(last_advert_created_at), last_advert_created_at DESC';
+        }
+    }
+    
+    $orderByClause = $orderBy;
+    if ($sortBy !== 'last_advert_time') {
+        $orderByClause = "$orderBy $sortOrder";
     }
     
     $stmt = $pdo->query("
         SELECT c.id, c.public_key, c.name, c.enabled, c.created_at, 
-               COALESCE(a.type, 0) as ad_type
+               COALESCE(a.type, 0) as ad_type,
+               a.last_advert_created_at
         FROM contacts c
         LEFT JOIN (
-            SELECT contact_id, type, 
+            SELECT contact_id, type, created_at as last_advert_created_at,
                    ROW_NUMBER() OVER (PARTITION BY contact_id ORDER BY created_at DESC) as rn
             FROM advertisements
         ) a ON c.id = a.contact_id AND a.rn = 1
-        ORDER BY $orderBy $sortOrder
+        ORDER BY $orderByClause
     ");
     $contacts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
@@ -556,6 +569,7 @@ try {
                         <th class="sortable" data-column="public_key">Public Key</th>
                         <th class="sortable" data-column="enabled">Enabled</th>
                         <th class="sortable" data-column="created_at">Created</th>
+                        <th class="sortable" data-column="last_advert_time">Last Advert Time</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -578,6 +592,7 @@ try {
                             </td>
                             <td><?php echo $contact['enabled'] ? 'Yes' : 'No'; ?></td>
                             <td><?php echo htmlspecialchars($contact['created_at']); ?></td>
+                            <td><?php echo htmlspecialchars($contact['last_advert_created_at'] ?? 'Never'); ?></td>
                             <td>
                                 <button class="delete-btn" onclick="confirmDelete(<?php echo $contact['id']; ?>, '<?php echo htmlspecialchars($contact['name'] ?? 'Unknown'); ?>')">
                                     Delete
