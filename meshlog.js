@@ -1206,6 +1206,15 @@ class MeshLog {
         };
         container.appendChild(repeaterSetupBtn);
 
+        // Add Weekly Stats button
+        let weeklyStatsBtn = document.createElement('button');
+        weeklyStatsBtn.classList.add('btn', 'weekly-stats-btn');
+        weeklyStatsBtn.innerText = 'Weekly Stats';
+        weeklyStatsBtn.onclick = (e) => {
+            this.openWeeklyStats();
+        };
+        container.appendChild(weeklyStatsBtn);
+
         this.dom_settings_contacts.appendChild(container);
     }
 
@@ -1695,6 +1704,181 @@ class MeshLog {
                   '• Microsoft Edge (version 89+)\n' +
                   '• Opera (version 75+)\n\n' +
                   'Note: Serial API must be enabled in browser settings.');
+        }
+    }
+
+    async openWeeklyStats() {
+        // Create modal overlay
+        let modal = document.createElement('div');
+        modal.classList.add('collision-helper-modal', 'weekly-stats-modal');
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        };
+
+        // Create modal content
+        let modalContent = document.createElement('div');
+        modalContent.classList.add('collision-helper-content', 'weekly-stats-content');
+        modalContent.onclick = (e) => e.stopPropagation();
+
+        // Create header
+        let header = document.createElement('div');
+        header.classList.add('collision-helper-header');
+        header.innerHTML = '<h3>Weekly Stats (Last 7 Days)</h3><button class="close-btn">&times;</button>';
+        header.querySelector('.close-btn').onclick = () => modal.remove();
+
+        // Create loading indicator
+        let content = document.createElement('div');
+        content.classList.add('weekly-stats-content-body');
+        content.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">Loading stats...</p>';
+        modalContent.appendChild(header);
+        modalContent.appendChild(content);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        try {
+            // Fetch weekly stats from API
+            const response = await fetch('api/v1/weekly_stats/index.php');
+            if (!response.ok) {
+                throw new Error('Failed to fetch weekly stats');
+            }
+            const stats = await response.json();
+
+            // Clear loading indicator
+            content.innerHTML = '';
+
+            // Channel Messages Section
+            let channelSection = document.createElement('div');
+            channelSection.classList.add('stats-section');
+            channelSection.innerHTML = '<h4>Channel Messages</h4>';
+            
+            let channelTable = document.createElement('table');
+            channelTable.classList.add('stats-table');
+            let channelTableHead = document.createElement('thead');
+            channelTableHead.innerHTML = '<tr><th>Channel</th><th>Messages</th><th>Avg/Day</th><th>vs Last Week</th></tr>';
+            channelTable.appendChild(channelTableHead);
+            
+            let channelTableBody = document.createElement('tbody');
+            if (stats.channel_messages.by_channel && stats.channel_messages.by_channel.length > 0) {
+                stats.channel_messages.by_channel.forEach(channel => {
+                    let row = document.createElement('tr');
+                    let diff = channel.diff_avg_per_day || 0;
+                    let diffText = diff >= 0 ? `+${diff.toFixed(1)}` : `${diff.toFixed(1)}`;
+                    let diffColor = diff >= 0 ? '#66bb6a' : '#ef5350';
+                    row.innerHTML = `<td>${this.sanitizeText(channel.channel_name || 'Unknown')}</td><td>${channel.message_count}</td><td style="color: #42a5f5;">${channel.avg_per_day || 0}</td><td style="color: ${diffColor}">${diffText}</td>`;
+                    channelTableBody.appendChild(row);
+                });
+            } else {
+                let row = document.createElement('tr');
+                row.innerHTML = '<td colspan="4" style="text-align: center; color: #888;">No channel messages</td>';
+                channelTableBody.appendChild(row);
+            }
+            channelTable.appendChild(channelTableBody);
+            channelSection.appendChild(channelTable);
+            
+            let channelTotal = document.createElement('div');
+            channelTotal.classList.add('stats-total');
+            let channelAvg = stats.channel_messages.total ? (stats.channel_messages.total / 7).toFixed(1) : 0;
+            let channelDiff = stats.channel_messages.total - (stats.channel_messages.total_previous || 0);
+            let channelDiffAvg = (channelDiff / 7).toFixed(1);
+            let channelDiffText = channelDiffAvg >= 0 ? `+${channelDiffAvg}` : channelDiffAvg;
+            let channelDiffColor = channelDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
+            channelTotal.innerHTML = `<strong>Total: ${stats.channel_messages.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${channelAvg}</span> | <span style="color: ${channelDiffColor}">${channelDiffText}</span>`;
+            channelSection.appendChild(channelTotal);
+            content.appendChild(channelSection);
+
+            // Advertisements Section
+            let advSection = document.createElement('div');
+            advSection.classList.add('stats-section');
+            advSection.innerHTML = '<h4>Advertisements</h4>';
+            
+            let advTable = document.createElement('table');
+            advTable.classList.add('stats-table');
+            let advTableHead = document.createElement('thead');
+            advTableHead.innerHTML = '<tr><th>Type</th><th>Count</th><th>Avg/Day</th><th>vs Last Week</th></tr>';
+            advTable.appendChild(advTableHead);
+            
+            let advTableBody = document.createElement('tbody');
+            if (stats.advertisements.by_type && stats.advertisements.by_type.length > 0) {
+                stats.advertisements.by_type.forEach(type => {
+                    let row = document.createElement('tr');
+                    let diff = type.diff_avg_per_day || 0;
+                    let diffText = diff >= 0 ? `+${diff.toFixed(1)}` : `${diff.toFixed(1)}`;
+                    let diffColor = diff >= 0 ? '#66bb6a' : '#ef5350';
+                    row.innerHTML = `<td>${this.sanitizeText(type.type)}</td><td>${type.count}</td><td style="color: #42a5f5;">${type.avg_per_day || 0}</td><td style="color: ${diffColor}">${diffText}</td>`;
+                    advTableBody.appendChild(row);
+                });
+            } else {
+                let row = document.createElement('tr');
+                row.innerHTML = '<td colspan="4" style="text-align: center; color: #888;">No advertisements</td>';
+                advTableBody.appendChild(row);
+            }
+            advTable.appendChild(advTableBody);
+            advSection.appendChild(advTable);
+            
+            let advTotal = document.createElement('div');
+            advTotal.classList.add('stats-total');
+            let advAvg = stats.advertisements.total ? (stats.advertisements.total / 7).toFixed(1) : 0;
+            let advDiff = stats.advertisements.total - (stats.advertisements.total_previous || 0);
+            let advDiffAvg = (advDiff / 7).toFixed(1);
+            let advDiffText = advDiffAvg >= 0 ? `+${advDiffAvg}` : advDiffAvg;
+            let advDiffColor = advDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
+            advTotal.innerHTML = `<strong>Total: ${stats.advertisements.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${advAvg}</span> | <span style="color: ${advDiffColor}">${advDiffText}</span>`;
+            advSection.appendChild(advTotal);
+            content.appendChild(advSection);
+
+            // Processed Packets Section
+            let packetsSection = document.createElement('div');
+            packetsSection.classList.add('stats-section');
+            packetsSection.innerHTML = '<h4>Processed Packets</h4>';
+            
+            let packetsTable = document.createElement('table');
+            packetsTable.classList.add('stats-table');
+            let packetsTableHead = document.createElement('thead');
+            packetsTableHead.innerHTML = '<tr><th>Reporter</th><th>Packets</th><th>Avg/Day</th><th>vs Last Week</th></tr>';
+            packetsTable.appendChild(packetsTableHead);
+            
+            let packetsTableBody = document.createElement('tbody');
+            if (stats.processed_packets.by_reporter && stats.processed_packets.by_reporter.length > 0) {
+                stats.processed_packets.by_reporter.forEach(reporter => {
+                    let row = document.createElement('tr');
+                    let diff = reporter.diff_avg_per_day || 0;
+                    let diffText = diff >= 0 ? `+${diff.toFixed(1)}` : `${diff.toFixed(1)}`;
+                    let diffColor = diff >= 0 ? '#66bb6a' : '#ef5350';
+                    row.innerHTML = `<td>${this.sanitizeText(reporter.reporter_name || 'Unknown')}</td><td>${reporter.packet_count}</td><td style="color: #42a5f5;">${reporter.avg_per_day || 0}</td><td style="color: ${diffColor}">${diffText}</td>`;
+                    packetsTableBody.appendChild(row);
+                });
+            } else {
+                let row = document.createElement('tr');
+                row.innerHTML = '<td colspan="4" style="text-align: center; color: #888;">No processed packets</td>';
+                packetsTableBody.appendChild(row);
+            }
+            packetsTable.appendChild(packetsTableBody);
+            packetsSection.appendChild(packetsTable);
+            
+            let packetsTotal = document.createElement('div');
+            packetsTotal.classList.add('stats-total');
+            let packetsAvg = stats.processed_packets.total ? (stats.processed_packets.total / 7).toFixed(1) : 0;
+            let packetsDiff = stats.processed_packets.total - (stats.processed_packets.total_previous || 0);
+            let packetsDiffAvg = (packetsDiff / 7).toFixed(1);
+            let packetsDiffText = packetsDiffAvg >= 0 ? `+${packetsDiffAvg}` : packetsDiffAvg;
+            let packetsDiffColor = packetsDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
+            packetsTotal.innerHTML = `<strong>Total: ${stats.processed_packets.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${packetsAvg}</span> | <span style="color: ${packetsDiffColor}">${packetsDiffText}</span>`;
+            packetsSection.appendChild(packetsTotal);
+            content.appendChild(packetsSection);
+
+            // Date range info
+            if (stats.date_range) {
+                let dateInfo = document.createElement('div');
+                dateInfo.classList.add('stats-date-range');
+                dateInfo.innerHTML = `<small style="color: #888;">Period: ${stats.date_range.from} to ${stats.date_range.to}</small>`;
+                content.appendChild(dateInfo);
+            }
+
+        } catch (error) {
+            console.error('Error loading weekly stats:', error);
+            content.innerHTML = `<p style="text-align: center; color: #f44; padding: 20px;">Error loading stats: ${error.message}</p>`;
         }
     }
 
