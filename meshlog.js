@@ -1741,7 +1741,13 @@ class MeshLog {
             // Fetch weekly stats from API
             const response = await fetch('api/v1/weekly_stats/index.php');
             if (!response.ok) {
-                throw new Error('Failed to fetch weekly stats');
+                if (response.status === 429) {
+                    const errorData = await response.json().catch(() => ({}));
+                    const retryAfter = response.headers.get('Retry-After') || '60';
+                    throw new Error(`Rate limit exceeded. Please try again in ${retryAfter} seconds.`);
+                }
+                const errorText = await response.text().catch(() => 'Unknown error');
+                throw new Error(`Failed to fetch weekly stats: ${response.status} ${errorText}`);
             }
             const stats = await response.json();
 
@@ -1779,9 +1785,9 @@ class MeshLog {
             
             let channelTotal = document.createElement('div');
             channelTotal.classList.add('stats-total');
-            let channelAvg = stats.channel_messages.total ? (stats.channel_messages.total / 7).toFixed(1) : 0;
+            let channelAvg = stats.channel_messages.total ? Math.round(stats.channel_messages.total / 7) : 0;
             let channelDiff = stats.channel_messages.total - (stats.channel_messages.total_previous || 0);
-            let channelDiffAvg = (channelDiff / 7).toFixed(1);
+            let channelDiffAvg = Math.round(channelDiff / 7);
             let channelDiffText = channelDiffAvg >= 0 ? `+${channelDiffAvg}` : channelDiffAvg;
             let channelDiffColor = channelDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
             channelTotal.innerHTML = `<strong>Total: ${stats.channel_messages.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${channelAvg}</span> | <span style="color: ${channelDiffColor}">${channelDiffText}</span>`;
@@ -1819,9 +1825,9 @@ class MeshLog {
             
             let advTotal = document.createElement('div');
             advTotal.classList.add('stats-total');
-            let advAvg = stats.advertisements.total ? (stats.advertisements.total / 7).toFixed(1) : 0;
+            let advAvg = stats.advertisements.total ? Math.round(stats.advertisements.total / 7) : 0;
             let advDiff = stats.advertisements.total - (stats.advertisements.total_previous || 0);
-            let advDiffAvg = (advDiff / 7).toFixed(1);
+            let advDiffAvg = Math.round(advDiff / 7);
             let advDiffText = advDiffAvg >= 0 ? `+${advDiffAvg}` : advDiffAvg;
             let advDiffColor = advDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
             advTotal.innerHTML = `<strong>Total: ${stats.advertisements.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${advAvg}</span> | <span style="color: ${advDiffColor}">${advDiffText}</span>`;
@@ -1859,9 +1865,9 @@ class MeshLog {
             
             let packetsTotal = document.createElement('div');
             packetsTotal.classList.add('stats-total');
-            let packetsAvg = stats.processed_packets.total ? (stats.processed_packets.total / 7).toFixed(1) : 0;
+            let packetsAvg = stats.processed_packets.total ? Math.round(stats.processed_packets.total / 7) : 0;
             let packetsDiff = stats.processed_packets.total - (stats.processed_packets.total_previous || 0);
-            let packetsDiffAvg = (packetsDiff / 7).toFixed(1);
+            let packetsDiffAvg = Math.round(packetsDiff / 7);
             let packetsDiffText = packetsDiffAvg >= 0 ? `+${packetsDiffAvg}` : packetsDiffAvg;
             let packetsDiffColor = packetsDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
             packetsTotal.innerHTML = `<strong>Total: ${stats.processed_packets.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${packetsAvg}</span> | <span style="color: ${packetsDiffColor}">${packetsDiffText}</span>`;

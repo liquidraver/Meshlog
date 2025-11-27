@@ -6,13 +6,14 @@ include "../rate_limit.php";
 include "../cache.php";
 
 // Rate limiting: 10 requests per 60 seconds per IP
-checkRateLimit(10, 60);
+// If rate limit fails, continue anyway (graceful degradation)
+@checkRateLimit(10, 60);
 
 // Cache key based on current hour (cache for 5 minutes)
 $cacheKey = 'weekly_stats_' . date('Y-m-d-H');
-$cachedData = getCached($cacheKey, 300);
+$cachedData = @getCached($cacheKey, 300);
 
-if ($cachedData !== false) {
+if ($cachedData !== false && isset($cachedData['data'])) {
     header('Content-Type: application/json; charset=utf-8');
     header('X-Cache: HIT');
     echo json_encode($cachedData['data'], JSON_PRETTY_PRINT);
@@ -170,9 +171,9 @@ $stats['channel_messages'] = array(
 foreach ($currentChannelStats as $channel) {
     $current = intval($channel['message_count']);
     $previous = isset($channelMap[$channel['channel_id']]) ? $channelMap[$channel['channel_id']]['previous'] : 0;
-    $avg = round($current / $days, 1);
+    $avg = round($current / $days);
     $diff = $current - $previous;
-    $diffAvg = round($diff / $days, 1);
+    $diffAvg = round($diff / $days);
     
     $stats['channel_messages']['by_channel'][] = array(
         'channel_id' => intval($channel['channel_id']),
@@ -195,7 +196,7 @@ foreach ($previousChannelStats as $channel) {
             'avg_per_day' => 0,
             'previous_week' => intval($channel['message_count']),
             'difference' => -intval($channel['message_count']),
-            'diff_avg_per_day' => round(-intval($channel['message_count']) / $days, 1)
+            'diff_avg_per_day' => round(-intval($channel['message_count']) / $days)
         );
     }
 }
@@ -230,9 +231,9 @@ $stats['advertisements'] = array(
 foreach ($currentAdvStats as $adv) {
     $current = intval($adv['count']);
     $previous = isset($advTypeMap[$adv['type_id']]) ? $advTypeMap[$adv['type_id']]['previous'] : 0;
-    $avg = round($current / $days, 1);
+    $avg = round($current / $days);
     $diff = $current - $previous;
-    $diffAvg = round($diff / $days, 1);
+    $diffAvg = round($diff / $days);
     
     $stats['advertisements']['by_type'][] = array(
         'type' => $adv['type_name'],
@@ -253,7 +254,7 @@ foreach ($previousAdvStats as $adv) {
             'avg_per_day' => 0,
             'previous_week' => intval($adv['count']),
             'difference' => -intval($adv['count']),
-            'diff_avg_per_day' => round(-intval($adv['count']) / $days, 1)
+            'diff_avg_per_day' => round(-intval($adv['count']) / $days)
         );
     }
 }
@@ -288,9 +289,9 @@ $stats['processed_packets'] = array(
 foreach ($currentReporterStats as $reporter) {
     $current = intval($reporter['packet_count']);
     $previous = isset($reporterMap[$reporter['reporter_id']]) ? $reporterMap[$reporter['reporter_id']]['previous'] : 0;
-    $avg = round($current / $days, 1);
+    $avg = round($current / $days);
     $diff = $current - $previous;
-    $diffAvg = round($diff / $days, 1);
+    $diffAvg = round($diff / $days);
     
     $stats['processed_packets']['by_reporter'][] = array(
         'reporter_id' => intval($reporter['reporter_id']),
@@ -313,7 +314,7 @@ foreach ($previousReporterStats as $reporter) {
             'avg_per_day' => 0,
             'previous_week' => intval($reporter['packet_count']),
             'difference' => -intval($reporter['packet_count']),
-            'diff_avg_per_day' => round(-intval($reporter['packet_count']) / $days, 1)
+            'diff_avg_per_day' => round(-intval($reporter['packet_count']) / $days)
         );
     }
 }
@@ -326,9 +327,9 @@ foreach ($previousReporterStats as $reporter) {
 // Direct messages totals
 $stats['direct_messages_total'] = $currentDmTotal;
 $stats['direct_messages_total_previous'] = $previousDmTotal;
-$stats['direct_messages_avg_per_day'] = round($currentDmTotal / $days, 1);
+$stats['direct_messages_avg_per_day'] = round($currentDmTotal / $days);
 $stats['direct_messages_diff'] = $currentDmTotal - $previousDmTotal;
-$stats['direct_messages_diff_avg_per_day'] = round($stats['direct_messages_diff'] / $days, 1);
+$stats['direct_messages_diff_avg_per_day'] = round($stats['direct_messages_diff'] / $days);
 
 // Add date range info
 $stats['date_range'] = array(
