@@ -2,8 +2,15 @@
 require_once "../../../lib/meshlog.class.php";
 require_once "../../../config.php";
 include "../utils.php";
+include "../rate_limit.php";
 
-$meshlog = new MeshLog(openPdo());
+// Rate limiting: 30 requests per 60 seconds per IP
+checkRateLimit(30, 60);
+
+$pdo = openPdo();
+// Set query timeout to 10 seconds
+$pdo->setAttribute(PDO::ATTR_TIMEOUT, 10);
+$meshlog = new MeshLog($pdo);
 
 $params = array(
     'offset' => getParam('offset', 0),

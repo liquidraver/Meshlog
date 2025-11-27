@@ -2,8 +2,27 @@
 require_once "../../../lib/meshlog.class.php";
 require_once "../../../config.php";
 include "../utils.php";
+include "../rate_limit.php";
+include "../cache.php";
 
-$meshlog = new MeshLog(openPdo());
+// Rate limiting: 10 requests per 60 seconds per IP
+checkRateLimit(10, 60);
+
+// Cache key based on current hour (cache for 5 minutes)
+$cacheKey = 'weekly_stats_' . date('Y-m-d-H');
+$cachedData = getCached($cacheKey, 300);
+
+if ($cachedData !== false) {
+    header('Content-Type: application/json; charset=utf-8');
+    header('X-Cache: HIT');
+    echo json_encode($cachedData['data'], JSON_PRETTY_PRINT);
+    exit;
+}
+
+$pdo = openPdo();
+// Set query timeout to 15 seconds for expensive queries
+$pdo->setAttribute(PDO::ATTR_TIMEOUT, 15);
+$meshlog = new MeshLog($pdo);
 
 // Calculate date ranges for current week and previous week
 $sevenDaysAgo = date('Y-m-d H:i:s', strtotime('-7 days'));
@@ -320,7 +339,11 @@ $stats['date_range'] = array(
     'days' => $days
 );
 
+// Cache the result
+setCache($cacheKey, $stats);
+
 header('Content-Type: application/json; charset=utf-8');
+header('X-Cache: MISS');
 echo json_encode($stats, JSON_PRETTY_PRINT);
 
 ?>
