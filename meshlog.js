@@ -1534,8 +1534,17 @@ class MeshLog {
 
     onLoadContacts() {
         let hashes = {};
+        
+        // First, process existing contacts
         Object.entries(this.contacts).forEach(([id,contact]) => {
-            let adv = Object.values(this.advertisements).reverse().find(item => item.data.contact_id == id);
+            let advs = Object.values(this.advertisements)
+                .filter(item => item.data.contact_id == id)
+                .sort((a, b) => {
+                    const aTime = a.data.sent_at || a.data.created_at || '';
+                    const bTime = b.data.sent_at || b.data.created_at || '';
+                    return bTime.localeCompare(aTime);
+                });
+            let adv = advs.length > 0 ? advs[0] : null;
 
             if (!adv && contact.data.advertisement) {
                 adv = new MeshLogAdvertisement(this, contact.data.advertisement);
@@ -1601,7 +1610,14 @@ class MeshLog {
 
         // Build the same collision detection as in onLoadContacts
         Object.entries(this.contacts).forEach(([id, contact]) => {
-            let adv = Object.values(this.advertisements).reverse().find(item => item.data.contact_id == id);
+            let advs = Object.values(this.advertisements)
+                .filter(item => item.data.contact_id == id)
+                .sort((a, b) => {
+                    const aTime = a.data.sent_at || a.data.created_at || '';
+                    const bTime = b.data.sent_at || b.data.created_at || '';
+                    return bTime.localeCompare(aTime);
+                });
+            let adv = advs.length > 0 ? advs[0] : null;
             if (!adv && contact.data.advertisement) {
                 adv = new MeshLogAdvertisement(this, contact.data.advertisement);
             }

@@ -10,7 +10,7 @@ require_once 'meshlog.channel.class.php';
 require_once 'meshlog.reporter.class.php';
 
 define("MAX_COUNT", 5000);
-define("DEFAULT_COUNT", 500);
+define("DEFAULT_COUNT", 1500);
 
 class MeshLog {
 

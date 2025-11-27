@@ -126,6 +126,22 @@ class MeshLogAdvertisement extends MeshLogEntity {
         );
     } 
 
+    public static function findBy($field, $value, $meshlog) {
+        if (empty($value) || empty($field) || !$meshlog) return false;
+
+        $tableStr = static::$table;
+        $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+
+        $query = $meshlog->pdo->prepare("SELECT * FROM $tableStr WHERE $field = :$field ORDER BY sent_at DESC, created_at DESC, id DESC");
+        $query->bindParam(":$field", $value, $type);
+        $query->execute();
+
+        $result = $query->fetch(PDO::FETCH_ASSOC);
+        if (!$result) return false;
+        $advertisement = static::fromDb($result, $meshlog);
+        return $advertisement;
+    }
+
     protected function getParams() {
         $rid = null;
         $cid = null;
