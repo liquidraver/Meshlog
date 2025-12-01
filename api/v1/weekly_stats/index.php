@@ -25,7 +25,8 @@ $pdo = openPdo();
 $pdo->setAttribute(PDO::ATTR_TIMEOUT, 15);
 $meshlog = new MeshLog($pdo);
 
-// Calculate date ranges for current week and previous week
+// Calculate date ranges for current week and previous week (UTC)
+date_default_timezone_set('UTC');
 $sevenDaysAgo = date('Y-m-d H:i:s', strtotime('-7 days'));
 $fourteenDaysAgo = date('Y-m-d H:i:s', strtotime('-14 days'));
 $now = date('Y-m-d H:i:s');
@@ -331,7 +332,7 @@ $stats['direct_messages_avg_per_day'] = round($currentDmTotal / $days);
 $stats['direct_messages_diff'] = $currentDmTotal - $previousDmTotal;
 $stats['direct_messages_diff_avg_per_day'] = round($stats['direct_messages_diff'] / $days);
 
-// Add date range info
+// Add date range info (UTC timestamps, will be converted to local time in frontend)
 $stats['date_range'] = array(
     'from' => $sevenDaysAgo,
     'to' => $now,

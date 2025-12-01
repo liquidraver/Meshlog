@@ -1769,9 +1769,9 @@ class MeshLog {
             if (stats.channel_messages.by_channel && stats.channel_messages.by_channel.length > 0) {
                 stats.channel_messages.by_channel.forEach(channel => {
                     let row = document.createElement('tr');
-                    let diff = channel.diff_avg_per_day || 0;
-                    let diffText = diff >= 0 ? `+${diff.toFixed(1)}` : `${diff.toFixed(1)}`;
-                    let diffColor = diff >= 0 ? '#66bb6a' : '#ef5350';
+                    let diff = Math.round(channel.diff_avg_per_day || 0);
+                    let diffText = diff === 0 ? '0' : (diff > 0 ? `+${diff}` : `${diff}`);
+                    let diffColor = diff === 0 ? '#ffffff' : (diff > 0 ? '#66bb6a' : '#ef5350');
                     row.innerHTML = `<td>${this.sanitizeText(channel.channel_name || 'Unknown')}</td><td>${channel.message_count}</td><td style="color: #42a5f5;">${channel.avg_per_day || 0}</td><td style="color: ${diffColor}">${diffText}</td>`;
                     channelTableBody.appendChild(row);
                 });
@@ -1788,8 +1788,8 @@ class MeshLog {
             let channelAvg = stats.channel_messages.total ? Math.round(stats.channel_messages.total / 7) : 0;
             let channelDiff = stats.channel_messages.total - (stats.channel_messages.total_previous || 0);
             let channelDiffAvg = Math.round(channelDiff / 7);
-            let channelDiffText = channelDiffAvg >= 0 ? `+${channelDiffAvg}` : channelDiffAvg;
-            let channelDiffColor = channelDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
+            let channelDiffText = channelDiffAvg === 0 ? '0' : (channelDiffAvg > 0 ? `+${channelDiffAvg}` : channelDiffAvg);
+            let channelDiffColor = channelDiffAvg === 0 ? '#ffffff' : (channelDiffAvg > 0 ? '#66bb6a' : '#ef5350');
             channelTotal.innerHTML = `<strong>Total: ${stats.channel_messages.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${channelAvg}</span> | <span style="color: ${channelDiffColor}">${channelDiffText}</span>`;
             channelSection.appendChild(channelTotal);
             content.appendChild(channelSection);
@@ -1809,9 +1809,9 @@ class MeshLog {
             if (stats.advertisements.by_type && stats.advertisements.by_type.length > 0) {
                 stats.advertisements.by_type.forEach(type => {
                     let row = document.createElement('tr');
-                    let diff = type.diff_avg_per_day || 0;
-                    let diffText = diff >= 0 ? `+${diff.toFixed(1)}` : `${diff.toFixed(1)}`;
-                    let diffColor = diff >= 0 ? '#66bb6a' : '#ef5350';
+                    let diff = Math.round(type.diff_avg_per_day || 0);
+                    let diffText = diff === 0 ? '0' : (diff > 0 ? `+${diff}` : `${diff}`);
+                    let diffColor = diff === 0 ? '#ffffff' : (diff > 0 ? '#66bb6a' : '#ef5350');
                     row.innerHTML = `<td>${this.sanitizeText(type.type)}</td><td>${type.count}</td><td style="color: #42a5f5;">${type.avg_per_day || 0}</td><td style="color: ${diffColor}">${diffText}</td>`;
                     advTableBody.appendChild(row);
                 });
@@ -1828,8 +1828,8 @@ class MeshLog {
             let advAvg = stats.advertisements.total ? Math.round(stats.advertisements.total / 7) : 0;
             let advDiff = stats.advertisements.total - (stats.advertisements.total_previous || 0);
             let advDiffAvg = Math.round(advDiff / 7);
-            let advDiffText = advDiffAvg >= 0 ? `+${advDiffAvg}` : advDiffAvg;
-            let advDiffColor = advDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
+            let advDiffText = advDiffAvg === 0 ? '0' : (advDiffAvg > 0 ? `+${advDiffAvg}` : advDiffAvg);
+            let advDiffColor = advDiffAvg === 0 ? '#ffffff' : (advDiffAvg > 0 ? '#66bb6a' : '#ef5350');
             advTotal.innerHTML = `<strong>Total: ${stats.advertisements.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${advAvg}</span> | <span style="color: ${advDiffColor}">${advDiffText}</span>`;
             advSection.appendChild(advTotal);
             content.appendChild(advSection);
@@ -1849,9 +1849,9 @@ class MeshLog {
             if (stats.processed_packets.by_reporter && stats.processed_packets.by_reporter.length > 0) {
                 stats.processed_packets.by_reporter.forEach(reporter => {
                     let row = document.createElement('tr');
-                    let diff = reporter.diff_avg_per_day || 0;
-                    let diffText = diff >= 0 ? `+${diff.toFixed(1)}` : `${diff.toFixed(1)}`;
-                    let diffColor = diff >= 0 ? '#66bb6a' : '#ef5350';
+                    let diff = Math.round(reporter.diff_avg_per_day || 0);
+                    let diffText = diff === 0 ? '0' : (diff > 0 ? `+${diff}` : `${diff}`);
+                    let diffColor = diff === 0 ? '#ffffff' : (diff > 0 ? '#66bb6a' : '#ef5350');
                     row.innerHTML = `<td>${this.sanitizeText(reporter.reporter_name || 'Unknown')}</td><td>${reporter.packet_count}</td><td style="color: #42a5f5;">${reporter.avg_per_day || 0}</td><td style="color: ${diffColor}">${diffText}</td>`;
                     packetsTableBody.appendChild(row);
                 });
@@ -1868,17 +1868,33 @@ class MeshLog {
             let packetsAvg = stats.processed_packets.total ? Math.round(stats.processed_packets.total / 7) : 0;
             let packetsDiff = stats.processed_packets.total - (stats.processed_packets.total_previous || 0);
             let packetsDiffAvg = Math.round(packetsDiff / 7);
-            let packetsDiffText = packetsDiffAvg >= 0 ? `+${packetsDiffAvg}` : packetsDiffAvg;
-            let packetsDiffColor = packetsDiffAvg >= 0 ? '#66bb6a' : '#ef5350';
+            let packetsDiffText = packetsDiffAvg === 0 ? '0' : (packetsDiffAvg > 0 ? `+${packetsDiffAvg}` : packetsDiffAvg);
+            let packetsDiffColor = packetsDiffAvg === 0 ? '#ffffff' : (packetsDiffAvg > 0 ? '#66bb6a' : '#ef5350');
             packetsTotal.innerHTML = `<strong>Total: ${stats.processed_packets.total}</strong> | <span style="color: #42a5f5;">Avg/Day: ${packetsAvg}</span> | <span style="color: ${packetsDiffColor}">${packetsDiffText}</span>`;
             packetsSection.appendChild(packetsTotal);
             content.appendChild(packetsSection);
 
-            // Date range info
+            // Date range info (convert UTC to local timezone)
             if (stats.date_range) {
                 let dateInfo = document.createElement('div');
                 dateInfo.classList.add('stats-date-range');
-                dateInfo.innerHTML = `<small style="color: #888;">Period: ${stats.date_range.from} to ${stats.date_range.to}</small>`;
+                
+                // Convert UTC timestamps to local time in same format as messages (YYYY-MM-DD HH:mm:ss)
+                let formatLocalDate = (utcString) => {
+                    // Parse UTC string (format: YYYY-MM-DD HH:mm:ss) as UTC
+                    let date = new Date(utcString.replace(' ', 'T') + 'Z');
+                    let year = date.getFullYear();
+                    let month = String(date.getMonth() + 1).padStart(2, '0');
+                    let day = String(date.getDate()).padStart(2, '0');
+                    let hours = String(date.getHours()).padStart(2, '0');
+                    let minutes = String(date.getMinutes()).padStart(2, '0');
+                    let seconds = String(date.getSeconds()).padStart(2, '0');
+                    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+                };
+                
+                let fromLocal = formatLocalDate(stats.date_range.from);
+                let toLocal = formatLocalDate(stats.date_range.to);
+                dateInfo.innerHTML = `<small style="color: #888;">Period: ${fromLocal} to ${toLocal}</small>`;
                 content.appendChild(dateInfo);
             }
 
