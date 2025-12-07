@@ -10,6 +10,7 @@ class MeshLogAdvertisement extends MeshLogEntity {
     public $name = null;
     public $lat = null;
     public $lon = null;
+    public $country_code = null;
     public $path = null;
     public $snr = null;
     public $type = null;
@@ -60,6 +61,7 @@ class MeshLogAdvertisement extends MeshLogEntity {
         $m->name = $data['name'];
         $m->lat = $data['lat'];
         $m->lon = $data['lon'];
+        $m->country_code = isset($data['country_code']) ? $data['country_code'] : null;
         $m->path = $data['path'];
         $m->snr = $data['snr'];
         $m->type = $data['type'];
@@ -101,6 +103,43 @@ class MeshLogAdvertisement extends MeshLogEntity {
         return true;
     }
 
+    // Geocode coordinates and set country_code using Nominatim API
+    private function geocodeCountry() {
+        if (!$this->lat || !$this->lon || $this->lat == 0 || $this->lon == 0) {
+            return;
+        }
+
+        // Use Nominatim API to get country code
+        $url = "https://nominatim.openstreetmap.org/reverse?format=json&lat={$this->lat}&lon={$this->lon}&zoom=3&addressdetails=1";
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => [
+                    'User-Agent: Meshlog/1.0 (https://map.mc868.hu/)',
+                    'Accept: application/json'
+                ],
+                'timeout' => 5 // Short timeout to avoid blocking saves
+            ]
+        ]);
+
+        $response = @file_get_contents($url, false, $context);
+        if ($response !== false) {
+            $data = json_decode($response, true);
+            if ($data && isset($data['address']['country_code'])) {
+                $this->country_code = strtoupper($data['address']['country_code']);
+            }
+        }
+    }
+
+    public function save($meshlog) {
+        // Geocode country before saving if coordinates are valid
+        if ($this->isNew() && $this->lat && $this->lon && $this->lat != 0 && $this->lon != 0) {
+            $this->geocodeCountry();
+        }
+        
+        return parent::save($meshlog);
+    }
+
     public function asArray() {
         $rid = null;
         $cid = null;
@@ -116,6 +155,7 @@ class MeshLogAdvertisement extends MeshLogEntity {
             "name" => $this->name,
             "lat" => floatval($this->lat),
             "lon" => floatval($this->lon),
+            "country_code" => $this->country_code,
             "snr" => floatval($this->snr),
             "type" => $this->type,
             "flags" => $this->flags,
@@ -156,6 +196,7 @@ class MeshLogAdvertisement extends MeshLogEntity {
             "name" => array($this->name, PDO::PARAM_STR),
             "lat" => array($this->lat, PDO::PARAM_STR),
             "lon" => array($this->lon, PDO::PARAM_STR),
+            "country_code" => array($this->country_code, PDO::PARAM_STR),
             "path" => array($this->path, PDO::PARAM_STR),
             "type" => array($this->type, PDO::PARAM_INT),
             "flags" => array($this->flags, PDO::PARAM_INT),

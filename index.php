@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <link id="favicon" rel="icon" type="image/x-icon" href="faviconw.ico">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
@@ -21,7 +21,14 @@
 <div id="leftbar">
     <div class="settings" id="settings-types">
     </div>
-    <div class="settings" id="settings-reporters">
+    <div class="settings" id="settings-bots">
+        <div class="settings-header" onclick="toggleReportersSection()">
+            <span>Reporters</span>
+            <span id="reporters-toggle" class="toggle-icon">▶</span>
+        </div>
+        <div id="bots-list" class="bots-list" style="display: none;">
+            <div class="bots-loading">Loading bots...</div>
+        </div>
     </div>
     <div class="settings" id="settings-translation">
         <div class="settings-header" onclick="toggleTranslationSection()">
@@ -29,6 +36,9 @@
             <span id="translation-toggle" class="toggle-icon">▶</span>
         </div>
         <div class="translation-controls" id="translation-controls" style="display: none;">
+            <div class="translation-help">
+                Press T next to a message to translate it
+            </div>
             <div class="translation-row">
                 <label>From:</label>
                 <select id="translation-from">
@@ -114,7 +124,7 @@ class Drags {
         this.pairs = [];
         this.container = document.getElementById(id);
 
-        self = this;
+        const self = this;
 
         this.container.addEventListener("mousemove", function (e) {
             e.preventDefault();
@@ -138,12 +148,11 @@ class Drags {
 
             pair.left.setWidth(ppLeft);
             pair.right.setWidth(ppRight);
-            
-            map.invalidateSize();
         });
 
         this.container.addEventListener("mouseup", function (e) {
             self.cancelDrag();
+            map.invalidateSize();
         });
     }
 
@@ -235,18 +244,69 @@ const formatedTimestamp = (d=new Date())=> {
   return `${date} ${time}`
 }
 
-var map = L.map('map').setView([47.1, 19.5], 8);
+// Detect mobile for performance optimizations
+const isMobile = window.innerWidth <= 900;
+
+var map = L.map('map', {
+    preferCanvas: isMobile, // Use canvas rendering on mobile for better performance
+    zoomAnimation: !isMobile, // Disable zoom animation on mobile
+    markerZoomAnimation: !isMobile, // Disable marker animation on mobile
+    fadeAnimation: !isMobile, // Disable fade animation on mobile
+    zoomControl: true,
+    doubleClickZoom: true,
+    boxZoom: false,
+    keyboard: true,
+    scrollWheelZoom: true,
+    tap: true,
+    touchZoom: true
+}).setView([47.1, 19.5], 8);
+
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    updateWhenZooming: !isMobile, // Don't update tiles during zoom on mobile
+    updateWhenIdle: isMobile // Only update when idle on mobile
 }).addTo(map);
+
+// Debounce zoom/move events on mobile to prevent freezing
+let zoomUpdateTimeout = null;
+let moveUpdateTimeout = null;
+
+if (isMobile) {
+    map.on('zoomstart', function() {
+        // Clear any pending updates
+        if (zoomUpdateTimeout) {
+            clearTimeout(zoomUpdateTimeout);
+        }
+    });
+    
+    map.on('zoomend', function() {
+        // Debounce invalidateSize to prevent multiple rapid calls
+        if (zoomUpdateTimeout) {
+            clearTimeout(zoomUpdateTimeout);
+        }
+        zoomUpdateTimeout = setTimeout(function() {
+            map.invalidateSize();
+        }, 100);
+    });
+    
+    map.on('moveend', function() {
+        // Debounce moveend updates
+        if (moveUpdateTimeout) {
+            clearTimeout(moveUpdateTimeout);
+        }
+        moveUpdateTimeout = setTimeout(function() {
+            // Any moveend-specific updates can go here
+        }, 150);
+    });
+}
 
 var meshlog = new MeshLog(
     map,
     "logs",
     "contacts",
     "settings-types",
-    "settings-reporters",
+    null,
     "settings-contacts"
 );
 meshlog.loadAll();
@@ -271,6 +331,19 @@ function toggleTranslationSection() {
         toggle.innerText = "▼";
     } else {
         controls.style.display = "none";
+        toggle.innerText = "▶";
+    }
+}
+
+function toggleReportersSection() {
+    const list = document.getElementById("bots-list");
+    const toggle = document.getElementById("reporters-toggle");
+    
+    if (list.style.display === "none") {
+        list.style.display = "block";
+        toggle.innerText = "▼";
+    } else {
+        list.style.display = "none";
         toggle.innerText = "▶";
     }
 }

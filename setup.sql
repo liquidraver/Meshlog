@@ -10,6 +10,7 @@ CREATE TABLE `advertisements` (
   `name` varchar(255) DEFAULT NULL,
   `lat` decimal(9,6) NOT NULL,
   `lon` decimal(9,6) NOT NULL,
+  `country_code` varchar(2) DEFAULT NULL COMMENT 'ISO 3166-1 alpha-2 country code (HU, SK, PL, etc.)',
   `path` varchar(192) NOT NULL,
   `type` tinyint(4) NOT NULL,
   `flags` smallint(4) NOT NULL,
@@ -149,14 +150,24 @@ CREATE TABLE `reporters` (
 ALTER TABLE `advertisements`
   ADD PRIMARY KEY (`id`),
   ADD KEY `contact_id` (`contact_id`),
-  ADD KEY `reporter_id` (`reporter_id`);
+  ADD KEY `reporter_id` (`reporter_id`),
+  ADD KEY `idx_country_code` (`country_code`),
+  ADD INDEX `idx_created_at` (`created_at`),
+  ADD INDEX `idx_sent_at` (`sent_at`),
+  ADD INDEX `idx_received_at` (`received_at`),
+  ADD INDEX `idx_contact_created` (`contact_id`, `created_at`),
+  ADD INDEX `idx_reporter_created` (`reporter_id`, `created_at`),
+  ADD INDEX `idx_type_created` (`type`, `created_at`),
+  ADD INDEX `idx_contact_sent_latest` (`contact_id`, `sent_at`, `id`);
 
 --
 -- Indexes for table `contacts`
 --
 ALTER TABLE `contacts`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `contact_pub_key` (`public_key`);
+  ADD UNIQUE KEY `contact_pub_key` (`public_key`),
+  ADD INDEX `idx_created_at` (`created_at`),
+  ADD INDEX `idx_enabled_created` (`enabled`, `created_at`);
 
 --
 -- Indexes for table `direct_messages`
@@ -164,14 +175,21 @@ ALTER TABLE `contacts`
 ALTER TABLE `direct_messages`
   ADD PRIMARY KEY (`id`),
   ADD KEY `contact_id` (`contact_id`),
-  ADD KEY `reporter_id` (`reporter_id`);
+  ADD KEY `reporter_id` (`reporter_id`),
+  ADD INDEX `idx_created_at` (`created_at`),
+  ADD INDEX `idx_sent_at` (`sent_at`),
+  ADD INDEX `idx_received_at` (`received_at`),
+  ADD INDEX `idx_contact_created` (`contact_id`, `created_at`),
+  ADD INDEX `idx_reporter_created` (`reporter_id`, `created_at`);
 
 --
 -- Indexes for table `channels`
 --
 ALTER TABLE `channels`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `channel_hash` (`hash`);
+  ADD UNIQUE KEY `channel_hash` (`hash`),
+  ADD INDEX `idx_enabled` (`enabled`),
+  ADD INDEX `idx_created_at` (`created_at`);
 
 --
 -- Indexes for table `channel_messages`
@@ -180,7 +198,13 @@ ALTER TABLE `channel_messages`
   ADD PRIMARY KEY (`id`),
   ADD KEY `contact_id` (`contact_id`),
   ADD KEY `reporter_id` (`reporter_id`),
-  ADD KEY `channel_id` (`channel_id`);
+  ADD KEY `channel_id` (`channel_id`),
+  ADD INDEX `idx_created_at` (`created_at`),
+  ADD INDEX `idx_sent_at` (`sent_at`),
+  ADD INDEX `idx_received_at` (`received_at`),
+  ADD INDEX `idx_channel_created` (`channel_id`, `created_at`),
+  ADD INDEX `idx_contact_created` (`contact_id`, `created_at`),
+  ADD INDEX `idx_reporter_created` (`reporter_id`, `created_at`);
 
 --
 -- Indexes for table `logs`
@@ -198,7 +222,9 @@ ALTER TABLE `raw`
 -- Indexes for table `reporters`
 --
 ALTER TABLE `reporters`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD INDEX `idx_authorized` (`authorized`),
+  ADD INDEX `idx_created_at` (`created_at`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -277,4 +303,15 @@ ALTER TABLE `channel_messages`
   ADD CONSTRAINT `channel_messages_ibfk_1` FOREIGN KEY (`contact_id`) REFERENCES `contacts` (`id`),
   ADD CONSTRAINT `channel_messages_ibfk_2` FOREIGN KEY (`reporter_id`) REFERENCES `reporters` (`id`),
   ADD CONSTRAINT `channel_messages_ibfk_3` FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`);
+
+--
+-- Analyze tables to update statistics for query optimizer
+--
+ANALYZE TABLE `advertisements`;
+ANALYZE TABLE `channel_messages`;
+ANALYZE TABLE `direct_messages`;
+ANALYZE TABLE `contacts`;
+ANALYZE TABLE `channels`;
+ANALYZE TABLE `reporters`;
+
 COMMIT;

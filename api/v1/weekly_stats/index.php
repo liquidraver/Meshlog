@@ -5,20 +5,21 @@ include "../utils.php";
 include "../rate_limit.php";
 include "../cache.php";
 
-// Rate limiting: 10 requests per 60 seconds per IP
-// If rate limit fails, continue anyway (graceful degradation)
-@checkRateLimit(10, 60);
-
-// Cache key based on current hour (cache for 5 minutes)
+// Cache key based on current hour (cache for 10 minutes)
 $cacheKey = 'weekly_stats_' . date('Y-m-d-H');
-$cachedData = @getCached($cacheKey, 300);
+$cachedData = @getCached($cacheKey, 600);
 
+// Check cache FIRST - if we have cached data, return it without rate limiting
 if ($cachedData !== false && isset($cachedData['data'])) {
     header('Content-Type: application/json; charset=utf-8');
     header('X-Cache: HIT');
     echo json_encode($cachedData['data'], JSON_PRETTY_PRINT);
     exit;
 }
+
+// Rate limiting: 30 requests per 60 seconds per IP (only for non-cached requests)
+// If rate limit fails, continue anyway (graceful degradation)
+@checkRateLimit(30, 60);
 
 $pdo = openPdo();
 // Set query timeout to 15 seconds for expensive queries

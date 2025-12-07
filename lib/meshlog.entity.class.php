@@ -146,7 +146,11 @@ class MeshLogEntity {
         if ($count > MAX_COUNT) $count = MAX_COUNT;
         $tableStr = static::$table;
     
-        $query = $meshlog->pdo->prepare("SELECT * FROM $tableStr $sqlWhere ORDER BY id DESC LIMIT :offset,:count");
+        // OPTIMIZATION: Always use created_at for ordering (uses index, faster than id for large tables)
+        // created_at index is more selective and faster for time-based queries
+        $orderBy = 'created_at DESC, id DESC';
+    
+        $query = $meshlog->pdo->prepare("SELECT * FROM $tableStr $sqlWhere ORDER BY $orderBy LIMIT :offset,:count");
         
         foreach ($sqlBind as $b) {
             if (sizeof($b) != 3) continue;

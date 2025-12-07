@@ -10,7 +10,7 @@ require_once 'meshlog.channel.class.php';
 require_once 'meshlog.reporter.class.php';
 
 define("MAX_COUNT", 5000);
-define("DEFAULT_COUNT", 1500);
+define("DEFAULT_COUNT", 500); // Reduced from 1500 for faster initial load
 
 class MeshLog {
 
@@ -201,13 +201,52 @@ class MeshLog {
         $results = MeshLogContact::getAll($this, $params);
 
         if ($params['advertisements']) {
-            foreach ($results['objects'] as $k => $c) {
-                $id = $c['id'];
-                $ad = MeshLogAdvertisement::findBy("contact_id", $id, $this);
-                if ($ad) {
-                    $results['objects'][$k]['advertisement'] = $ad->asArray();
-                } else {
-                    $results['objects'][$k]['advertisement'] = $ad;
+            // OPTIMIZATION: Fix N+1 query problem by fetching all advertisements in one query
+            $contactIds = array();
+            foreach ($results['objects'] as $c) {
+                $contactIds[] = $c['id'];
+            }
+            
+            if (!empty($contactIds)) {
+                // Get latest advertisement for each contact in a single query
+                $placeholders = implode(',', array_fill(0, count($contactIds), '?'));
+                $sql = "SELECT a1.* FROM advertisements a1
+                        INNER JOIN (
+                            SELECT contact_id, MAX(sent_at) as max_sent_at
+                            FROM advertisements
+                            WHERE contact_id IN ($placeholders)
+                            GROUP BY contact_id
+                        ) a2 ON a1.contact_id = a2.contact_id 
+                            AND a1.sent_at = a2.max_sent_at
+                        ORDER BY a1.contact_id, a1.id DESC";
+                
+                $query = $this->pdo->prepare($sql);
+                $query->execute($contactIds);
+                $advertisements = $query->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Create lookup map
+                $adMap = array();
+                foreach ($advertisements as $adData) {
+                    $contactId = $adData['contact_id'];
+                    if (!isset($adMap[$contactId])) {
+                        $ad = MeshLogAdvertisement::fromDb($adData, $this);
+                        $adMap[$contactId] = $ad->asArray();
+                    }
+                }
+                
+                // Assign advertisements to contacts
+                foreach ($results['objects'] as $k => $c) {
+                    $id = $c['id'];
+                    if (isset($adMap[$id])) {
+                        $results['objects'][$k]['advertisement'] = $adMap[$id];
+                    } else {
+                        $results['objects'][$k]['advertisement'] = null;
+                    }
+                }
+            } else {
+                // No contacts, set null for all
+                foreach ($results['objects'] as $k => $c) {
+                    $results['objects'][$k]['advertisement'] = null;
                 }
             }
         }

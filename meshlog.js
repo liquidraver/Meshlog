@@ -1,5 +1,65 @@
 // TODO: Each Object Type sohuld have its own class with "updateDom()" function, that will update DOM with changed new values
 
+// Extract removeEmojis to module level for performance
+const removeEmojis = (str) => {
+    return str.replace(
+        /([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDD00-\uDFFF])/g,
+        ''
+    );
+};
+
+// Create smooth curved path between two points following earth curvature
+// Optimized: reduces steps on mobile for better performance
+function createCurvedPath(start, end, curvature = 0.1) {
+    // Calculate great circle distance for more natural earth-following curve
+    const toRad = Math.PI / 180;
+    const lat1 = start[0] * toRad;
+    const lon1 = start[1] * toRad;
+    const lat2 = end[0] * toRad;
+    const lon2 = end[1] * toRad;
+    
+    // Calculate great circle intermediate points
+    const points = [];
+    // Reduce steps on mobile for better performance, keep full quality on desktop
+    const steps = (typeof isMobile !== 'undefined' && isMobile) ? 8 : 15;
+    
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        
+        // Great circle interpolation
+        const d = Math.acos(Math.sin(lat1) * Math.sin(lat2) + 
+                           Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1));
+        
+        if (d === 0) {
+            points.push([start[0], start[1]]);
+            continue;
+        }
+        
+        const a = Math.sin((1 - t) * d) / Math.sin(d);
+        const b = Math.sin(t * d) / Math.sin(d);
+        
+        const x = a * Math.cos(lat1) * Math.cos(lon1) + b * Math.cos(lat2) * Math.cos(lon2);
+        const y = a * Math.cos(lat1) * Math.sin(lon1) + b * Math.cos(lat2) * Math.sin(lon2);
+        const z = a * Math.sin(lat1) + b * Math.sin(lat2);
+        
+        const lat = Math.atan2(z, Math.sqrt(x * x + y * y)) / toRad;
+        const lon = Math.atan2(y, x) / toRad;
+        
+        // Add subtle perpendicular offset for visual curve
+        const dx = end[1] - start[1];
+        const dy = end[0] - start[0];
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const perpLat = -dx * curvature * distance * 0.3;
+        const perpLon = dy * curvature * distance * 0.3;
+        
+        // Apply subtle offset using sine wave for smooth curve
+        const offsetFactor = Math.sin(t * Math.PI);
+        points.push([lat + perpLat * offsetFactor, lon + perpLon * offsetFactor]);
+    }
+    
+    return points;
+}
+
 class MeshLogObject {
     constructor(meshlog, data) {
         this._meshlog = meshlog;
@@ -178,29 +238,70 @@ class MeshLogContact extends MeshLogObject {
 
             // Red is incoming
             if (dir.in) {
-                layers.push(L.polyline([
-                    src,
-                    dst
-                ], {color: 'white', weight: ln_outline}));
-
-                layers.push(L.polyline([
-                    src,
-                    dst
-                ], {color: '#F44336', weight: ln_weight}));
+                const hasOffset = dir.out; // If both in and out, we'll use offset for out
+                if (hasOffset) {
+                    // Use straight line when offset will be used for outgoing
+                    layers.push(L.polyline([src, dst], {
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        weight: ln_outline,
+                        opacity: 0.6
+                    }));
+                    layers.push(L.polyline([src, dst], {
+                        color: '#FF5252',
+                        weight: ln_weight,
+                        opacity: 0.9
+                    }));
+                } else {
+                    // Use curved path when no offset needed
+                    const curvedPath = createCurvedPath(src, dst, 0.08);
+                    layers.push(L.polyline(curvedPath, {
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        weight: ln_outline,
+                        opacity: 0.6,
+                        smoothFactor: 1.0
+                    }));
+                    layers.push(L.polyline(curvedPath, {
+                        color: '#FF5252',
+                        weight: ln_weight,
+                        opacity: 0.9,
+                        smoothFactor: 1.0
+                    }));
+                }
             }
 
             // Blue is outgoing
             if (dir.out) {
                 let offset = dir.in ? ln_offset : 0;
-                layers.push(L.polyline([
-                    src,
-                    dst
-                ], {color: 'white', weight: ln_outline, offset: offset}));
-
-                layers.push(L.polyline([
-                    src,
-                    dst
-                ], {color: '#3949AB', weight: ln_weight, offset: offset}));
+                if (offset !== 0) {
+                    // Use straight line when offset is needed
+                    layers.push(L.polyline([src, dst], {
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        weight: ln_outline,
+                        offset: offset,
+                        opacity: 0.6
+                    }));
+                    layers.push(L.polyline([src, dst], {
+                        color: '#42A5F5',
+                        weight: ln_weight,
+                        offset: offset,
+                        opacity: 0.9
+                    }));
+                } else {
+                    // Use curved path when no offset needed
+                    const curvedPath = createCurvedPath(src, dst, 0.08);
+                    layers.push(L.polyline(curvedPath, {
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        weight: ln_outline,
+                        opacity: 0.6,
+                        smoothFactor: 1.0
+                    }));
+                    layers.push(L.polyline(curvedPath, {
+                        color: '#42A5F5',
+                        weight: ln_weight,
+                        opacity: 0.9,
+                        smoothFactor: 1.0
+                    }));
+                }
             }
         });
 
@@ -215,16 +316,6 @@ class MeshLogContact extends MeshLogObject {
         if (!this._meshlog.map_layers.hasOwnProperty(pathId)) return;
         this._meshlog.map.removeLayer(this._meshlog.map_layers[pathId]);
         delete this._meshlog.map_layers[pathId];
-    }
-
-    getColor(str) {
-        let hash = 0;
-        for (let i = 0; i < this.data.name.length; i++) {
-          hash = ((hash << 5) - hash) + this.data.name.charCodeAt(i);
-          hash |= 0;
-        }
-        const threeByteHash = hash >>> 0 & 0xFFFFFF;
-        return threeByteHash.toString(16).padStart(6, '0');
     }
 
     createDom(root) {
@@ -347,7 +438,7 @@ class MeshLogContact extends MeshLogObject {
         if (this.isClient()) {
             const rep = this.isReporter();
             if (rep) {
-                receipt = rep.data.color;
+                receipt = dimColor(rep.data.color);
             } else {
                 iconUrl = 'assets/img/person.svg';
             }
@@ -355,6 +446,8 @@ class MeshLogContact extends MeshLogObject {
             iconUrl = 'assets/img/tower.svg';
         } else if (this.isRoom()) {
             iconUrl = 'assets/img/group.svg';
+        } else if (this.isSensor()) {
+            iconUrl = 'assets/img/sensor.svg';
         } else {
             iconUrl = 'assets/img/unknown.svg';
         }
@@ -370,6 +463,7 @@ class MeshLogContact extends MeshLogObject {
         if (emoji) {
             innerIcon = document.createElement('span');
             innerIcon.innerText = emoji;
+            innerIcon.classList.add('marker-emoji');
         } else if (receipt) {
             const hw = '20px';
             innerIcon = document.createElement('span');
@@ -406,8 +500,9 @@ class MeshLogContact extends MeshLogObject {
         let icon = L.divIcon({
             className: 'custom-div-icon',
             html: icdivroot,
-            iconSize: [30, 42],
-            iconAnchor: [15, 42]
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+            popupAnchor: [0, -12]
         });
 
         const self = this;
@@ -420,11 +515,14 @@ class MeshLogContact extends MeshLogObject {
         this.marker.bindTooltip(tooltip);
         this.marker.on('mouseover', (e) => {
             self.highlight = 'yellow';
-            this.updateDom();
+            self.updateDom();
         });
         this.marker.on('mouseout', (e) => {
             self.highlight = '';
-            this.updateDom();
+            self.updateDom();
+        });
+        this.marker.on('click', (e) => {
+            self._meshlog.filterByContact(self);
         });
     }
 
@@ -457,6 +555,9 @@ class MeshLogContact extends MeshLogObject {
         } else if (this.adv.data.type == 3) {
             this.dom.icon.src = "assets/img/group.svg";
             this.dom.type.innerText = `Type: Room`;
+        } else if (this.adv.data.type == 4) {
+            this.dom.icon.src = "assets/img/sensor.svg";
+            this.dom.type.innerText = `Type: Sensor`;
         } else {
             this.dom.type.innerText = `Type: Unknown`;
             this.dom.icon.src = "assets/img/unknown.svg";
@@ -465,13 +566,6 @@ class MeshLogContact extends MeshLogObject {
         this.dom.name.innerText = this._meshlog.sanitizeText(this.adv.data.name);
         this.dom.date.innerText = this._meshlog.sanitizeText(this.adv.data.sent_at);
         this.dom.hash.innerText = `[${this._meshlog.validateHash(hashstr)}]`;
-
-        const removeEmojis = (str) => {
-            return str.replace(
-                /([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDD00-\uDFFF])/g,
-                ''
-            );
-        };
 
         if (this.highlight) {
             this.dom.name.classList.add("chighlight");
@@ -482,15 +576,17 @@ class MeshLogContact extends MeshLogObject {
         this.dom.container.dataset.time = this.adv.time;
         this.dom.container.dataset.name = this._meshlog.sanitizeText(removeEmojis(this.adv.data.name).trim());
         this.dom.container.dataset.hash = this._meshlog.validateHash(hashstr);
-    }
 
-    updateMarker() {
-        if (!this.marker) return;
+        let allvis = Object.keys(this._meshlog.visible_contacts).length < 1;
+        if (allvis || this._meshlog.visible_contacts.hasOwnProperty(this.data.id)) {
+            this.dom.container.hidden = false;
+        } else {
+            this.dom.container.hidden = true;
+        }
     }
 
     update() {
         this.updateDom();
-        this.updateMarker();
     }
 
     isClient() {
@@ -503,6 +599,10 @@ class MeshLogContact extends MeshLogObject {
 
     isRoom() {
         return this.adv && this.adv.data.type == 3;
+    }
+
+    isSensor() {
+        return this.adv && this.adv.data.type == 4;
     }
 
     isReporter() {
@@ -532,7 +632,7 @@ class MeshLogGroupChild extends MeshLogObject {
 
         let reporter = this._meshlog.reporters[this.data.reporter_id];
         if (reporter) {
-            dot.style.background = reporter.data.color;
+            dot.style.background = dimColor(reporter.data.color);
         }
 
         container.appendChild(date);
@@ -602,10 +702,218 @@ class MeshLogAdvertisement extends MeshLogGroupChild {
     }
 }
 
+// Country detection cache to avoid repeated API calls
+
+// Dim/reduce vibrancy of a color (for reporter colors)
+function dimColor(color) {
+    if (!color) return color;
+    
+    // Handle hex colors
+    if (color.startsWith('#')) {
+        const hex = color.slice(1);
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        
+        // Convert RGB to HSL
+        const rNorm = r / 255;
+        const gNorm = g / 255;
+        const bNorm = b / 255;
+        
+        const max = Math.max(rNorm, gNorm, bNorm);
+        const min = Math.min(rNorm, gNorm, bNorm);
+        let h, s, l = (max + min) / 2;
+        
+        if (max === min) {
+            h = s = 0;
+        } else {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            
+            switch (max) {
+                case rNorm: h = ((gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0)) / 6; break;
+                case gNorm: h = ((bNorm - rNorm) / d + 2) / 6; break;
+                case bNorm: h = ((rNorm - gNorm) / d + 4) / 6; break;
+            }
+        }
+        
+        // Make more pastel: reduce saturation slightly (20%) and increase lightness (15%) for pastel effect
+        s = Math.max(0, s * 0.8);
+        l = Math.min(0.85, l * 1.15);
+        
+        // Convert back to RGB
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+        const m = l - c / 2;
+        
+        let rNew, gNew, bNew;
+        if (h < 1/6) {
+            rNew = c; gNew = x; bNew = 0;
+        } else if (h < 2/6) {
+            rNew = x; gNew = c; bNew = 0;
+        } else if (h < 3/6) {
+            rNew = 0; gNew = c; bNew = x;
+        } else if (h < 4/6) {
+            rNew = 0; gNew = x; bNew = c;
+        } else if (h < 5/6) {
+            rNew = x; gNew = 0; bNew = c;
+        } else {
+            rNew = c; gNew = 0; bNew = x;
+        }
+        
+        rNew = Math.round((rNew + m) * 255);
+        gNew = Math.round((gNew + m) * 255);
+        bNew = Math.round((bNew + m) * 255);
+        
+        return `#${rNew.toString(16).padStart(2, '0')}${gNew.toString(16).padStart(2, '0')}${bNew.toString(16).padStart(2, '0')}`;
+    }
+    
+    // Handle HSL colors
+    if (color.startsWith('hsl')) {
+        const match = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+        if (match) {
+            const h = parseInt(match[1]);
+            let s = parseInt(match[2]);
+            let l = parseInt(match[3]);
+            
+            s = Math.max(0, s * 0.8); // Reduce saturation by 20% for pastel
+            l = Math.min(85, l * 1.15); // Increase lightness by 15% for pastel effect
+            
+            return `hsl(${h}, ${Math.round(s)}%, ${Math.round(l)}%)`;
+        }
+    }
+    
+    // Handle RGB colors
+    if (color.startsWith('rgb')) {
+        const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+        if (match) {
+            const r = parseInt(match[1]);
+            const g = parseInt(match[2]);
+            const b = parseInt(match[3]);
+            
+            // Convert to HSL, dim, convert back
+            const rNorm = r / 255;
+            const gNorm = g / 255;
+            const bNorm = b / 255;
+            
+            const max = Math.max(rNorm, gNorm, bNorm);
+            const min = Math.min(rNorm, gNorm, bNorm);
+            let h, s, l = (max + min) / 2;
+            
+            if (max !== min) {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                
+                switch (max) {
+                    case rNorm: h = ((gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0)) / 6; break;
+                    case gNorm: h = ((bNorm - rNorm) / d + 2) / 6; break;
+                    case bNorm: h = ((rNorm - gNorm) / d + 4) / 6; break;
+                }
+            } else {
+                h = s = 0;
+            }
+            
+            s = Math.max(0, s * 0.8); // Reduce saturation by 20% for pastel
+            l = Math.min(0.85, l * 1.15); // Increase lightness by 15% for pastel effect
+            
+            const c = (1 - Math.abs(2 * l - 1)) * s;
+            const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+            const m = l - c / 2;
+            
+            let rNew, gNew, bNew;
+            if (h < 1/6) {
+                rNew = c; gNew = x; bNew = 0;
+            } else if (h < 2/6) {
+                rNew = x; gNew = c; bNew = 0;
+            } else if (h < 3/6) {
+                rNew = 0; gNew = c; bNew = x;
+            } else if (h < 4/6) {
+                rNew = 0; gNew = x; bNew = c;
+            } else if (h < 5/6) {
+                rNew = x; gNew = 0; bNew = c;
+            } else {
+                rNew = c; gNew = 0; bNew = x;
+            }
+            
+            rNew = Math.round((rNew + m) * 255);
+            gNew = Math.round((gNew + m) * 255);
+            bNew = Math.round((bNew + m) * 255);
+            
+            return `rgb(${rNew}, ${gNew}, ${bNew})`;
+        }
+    }
+    
+    // If we can't parse it, return as-is
+    return color;
+}
+
+// Generate consistent strong color from string (good contrast on blue background)
+// Uses better distribution to ensure distinct colors with added randomness
+function stringToColor(str) {
+    // Multi-pass hash for better distribution and more randomness
+    let hash1 = 0;
+    let hash2 = 0;
+    let hash3 = 0;
+    
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        // First hash: standard shift-add
+        hash1 = ((hash1 << 5) - hash1) + char;
+        hash1 = hash1 & hash1; // Convert to 32-bit integer
+        
+        // Second hash: different multiplier for variation
+        hash2 = ((hash2 << 7) - hash2) + char;
+        hash2 = hash2 & hash2;
+        
+        // Third hash: position-dependent for more randomness
+        hash3 = ((hash3 << 3) - hash3) + (char * (i + 1));
+        hash3 = hash3 & hash3;
+    }
+    
+    // Combine hashes with different operations to add randomness
+    const combinedHash = (hash1 ^ (hash2 << 16) ^ (hash3 >> 8)) >>> 0;
+    
+    // Use multiple golden ratio multipliers for better distribution
+    const goldenRatio1 = 0.618033988749895;
+    const goldenRatio2 = 0.381966011250105; // 1 - goldenRatio
+    const goldenRatio3 = 0.23606797749979; // Another related value
+    
+    // Generate hue using multiple ratios and combine with XOR for randomness
+    const hue1 = Math.abs((combinedHash * goldenRatio1) % 1) * 360;
+    const hue2 = Math.abs((hash2 * goldenRatio2) % 1) * 360;
+    const hue3 = Math.abs((hash3 * goldenRatio3) % 1) * 360;
+    
+    // Combine hues with weighted average and add noise
+    const baseHue = (hue1 * 0.5 + hue2 * 0.3 + hue3 * 0.2) % 360;
+    const noise = (combinedHash % 20) - 10; // -10 to +10 degrees of noise
+    let hue = (baseHue + noise + 360) % 360;
+    
+    // Strong, vibrant colors - avoid pastels
+    // Use different parts of hash for saturation and lightness to add variation
+    const satHash = (combinedHash ^ hash2) >>> 0;
+    const lightHash = (combinedHash ^ hash3) >>> 0;
+    
+    const saturation = 85 + (Math.abs(satHash) % 15); // 85-100%
+    const lightness = 55 + (Math.abs(lightHash) % 15); // 55-70%
+    
+    // Avoid colors too close to blue (200-240 degrees) for better contrast
+    let adjustedHue = hue;
+    if (hue >= 200 && hue <= 240) {
+        // Shift blue hues to warmer colors with some randomness
+        const shiftAmount = (combinedHash % 40) - 20; // -20 to +20
+        adjustedHue = (hue < 220) ? (180 + shiftAmount) : (250 + shiftAmount);
+        adjustedHue = (adjustedHue + 360) % 360;
+    }
+    
+    return `hsl(${Math.round(adjustedHue)}, ${saturation}%, ${lightness}%)`;
+}
+
 class MeshLogMessageGroup extends MeshLogObject {
     constructor(meshlog, data) {
         super(meshlog, data);
         this.messages = {};
+        this.channelColor = null;
+        this.usernameColor = null;
     }
 
     addMessage(msg) {
@@ -642,13 +950,22 @@ class MeshLogMessageGroup extends MeshLogObject {
         date.classList.add("sp");
         date.classList.add("c");
 
-        let translateBtn = document.createElement("button");
-        translateBtn.classList.add("translate-btn");
-        translateBtn.innerText = "T";
-        translateBtn.title = "Translate message";
-        translateBtn.style.marginLeft = "4px";
-        translateBtn.style.marginRight = "12px";
-        translateBtn.setAttribute("data-state", "translate");
+        // Only create translate button for non-advertisement messages
+        let translateBtn = null;
+        const firstMsg = this.first();
+        if (firstMsg && !(firstMsg instanceof MeshLogAdvertisement)) {
+            translateBtn = document.createElement("button");
+            translateBtn.classList.add("translate-btn");
+            translateBtn.innerText = "T";
+            translateBtn.title = "Translate message";
+            translateBtn.style.marginLeft = "4px";
+            translateBtn.style.marginRight = "12px";
+            translateBtn.setAttribute("data-state", "translate");
+            translateBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.translateMessage();
+            }
+        }
 
         let message = document.createElement("div");
 
@@ -675,11 +992,6 @@ class MeshLogMessageGroup extends MeshLogObject {
             e.stopPropagation();
         }
 
-        translateBtn.onclick = (e) => {
-            e.stopPropagation();
-            this.translateMessage();
-        }
-
         let child = document.createElement("div");
         child.style.borderLeft = "solid 2px #888";
         child.style.marginLeft = "2px";
@@ -692,10 +1004,17 @@ class MeshLogMessageGroup extends MeshLogObject {
         message.appendChild(name);
         message.appendChild(text);
 
+        // Wrap message content in a row so date can be on top
+        let messageRow = document.createElement("div");
+        messageRow.classList.add("message-row");
+        if (translateBtn) {
+            messageRow.appendChild(translateBtn);
+        }
+        messageRow.appendChild(message);
+        messageRow.appendChild(right);
+
         group.appendChild(date);
-        group.appendChild(translateBtn);
-        group.appendChild(message);
-        group.appendChild(right);
+        group.appendChild(messageRow);
         container.appendChild(group);
         container.appendChild(child);
 
@@ -774,33 +1093,119 @@ class MeshLogMessageGroup extends MeshLogObject {
         // Display timestamp as-is (server is already in CEST/UTC+2)
         this.dom.date.innerText = this._meshlog.sanitizeText(msg.data.sent_at);
         
-        // Add channel name prefix for channel messages
-        let displayName = this._meshlog.sanitizeText(msg.data.name);
-        if (msg instanceof MeshLogChannelMessage && msg.data.channel_id) {
-            // Get channel from database using channel_id
-            const channel = this._meshlog.channels[msg.data.channel_id];
-            if (channel && channel.data.name) {
-                displayName = "(" + channel.data.name + ") " + displayName;
-            }
-        }
-        this.dom.name.innerText = displayName + ": ";
-
         const sz = this.size();
         this.dom.count.innerText = `×${sz}`;
 
         let hidden = false;
 
+        // Handle advertisements first - make them bland
         if (msg instanceof MeshLogAdvertisement) {
-            this.dom.text.innerText = "Advert";
-            this.dom.text.style.color = 'gray';
+            // Check if node's internal time (received_at) deviates from server time by 30+ minutes
+            // received_at = node's internal time (from database, from data['time']['sender'])
+            // created_at = when server received/processed the advert (from database, set by DEFAULT current_timestamp())
+            let isWrongTime = false;
+            // Compare node's internal time with server's time
+            const nodeInternalTime = msg.data.received_at; // From database: node's internal time
+            const serverCreatedAt = msg.data.created_at; // From database: server's creation timestamp
+            
+            if (nodeInternalTime && serverCreatedAt) {
+                try {
+                    const nodeTime = new Date(nodeInternalTime).getTime();
+                    const serverTime = new Date(serverCreatedAt).getTime();
+                    if (!isNaN(nodeTime) && !isNaN(serverTime) && nodeTime > 0 && serverTime > 0) {
+                        const diffMs = Math.abs(serverTime - nodeTime);
+                        const diffMinutes = diffMs / (1000 * 60);
+                        // If difference is 30 minutes or more, node's clock is wrong
+                        if (diffMinutes >= 30) {
+                            isWrongTime = true;
+                        }
+                    }
+                } catch (e) {
+                    // If date parsing fails, ignore
+                }
+            }
+            
+            // Regular adverts: grey, wrong time adverts: red
+            this.dom.text.innerText = "Advert" + (isWrongTime ? " - wrong time" : "");
+            this.dom.text.style.color = isWrongTime ? '#ff6666' : '#888888'; // Red for wrong time, grey for normal
+            // Keep date color same as messages (blue) - don't override
+            
+            // Make name colored based on reporter's color if in Hungary/Slovakia/Poland
+            this.dom.name.innerHTML = '';
+            const nameSpan = document.createElement('span');
+            
+            let nameColor = '#80CBC4'; // Default teal/cyan
+            
+            // Use country_code from database
+            if (msg.data.reporter_id && msg.data.country_code) {
+                const reporter = this._meshlog.reporters[msg.data.reporter_id];
+                if (reporter && reporter.data && reporter.data.color) {
+                    // Use stored country_code from database
+                    if (['HU', 'SK', 'PL'].includes(msg.data.country_code)) {
+                        nameSpan.style.color = dimColor(reporter.data.color);
+                    }
+                }
+            }
+            
+            nameSpan.style.color = nameColor;
+            const displayName = this._meshlog.sanitizeText(msg.data.name);
+            nameSpan.textContent = displayName + ": ";
+            this.dom.name.appendChild(nameSpan);
+            
             hidden = !this._meshlog.settings.types.advertisements;
-        } else if (msg instanceof MeshLogChannelMessage) {
+        } else {
+            // Build name with colors for non-advertisement messages
+            let username = this._meshlog.sanitizeText(msg.data.name);
+            let channelName = null;
+            
+            // Clear name element to rebuild with proper colors
+            this.dom.name.innerHTML = '';
+            
+            if (msg instanceof MeshLogChannelMessage && msg.data.channel_id) {
+                // Get channel from database using channel_id
+                const channel = this._meshlog.channels[msg.data.channel_id];
+                if (channel && channel.data.name) {
+                    channelName = channel.data.name;
+                    
+                    // Get or create consistent channel color
+                    if (!this._meshlog.channelColors[channelName]) {
+                        this._meshlog.channelColors[channelName] = stringToColor(channelName);
+                    }
+                    const channelColor = this._meshlog.channelColors[channelName];
+                    
+                    // Create channel name span with color
+                    const channelSpan = document.createElement('span');
+                    channelSpan.style.color = channelColor;
+                    channelSpan.textContent = `(${channelName}) `;
+                    this.dom.name.appendChild(channelSpan);
+                    
+                    this.dom.group.classList.add('channel-message');
+                    this.dom.group.style.setProperty('--channel-color', channelColor);
+                }
+            } else if (msg instanceof MeshLogDirecMessage) {
+                this.dom.group.classList.add('direct-message');
+            }
+            
+            // Set username color (consistent across all messages from same user)
+            const usernameKey = msg.data.name || 'unknown';
+            if (!this._meshlog.usernameColors[usernameKey]) {
+                this._meshlog.usernameColors[usernameKey] = stringToColor(usernameKey);
+            }
+            const usernameColor = this._meshlog.usernameColors[usernameKey];
+            
+            // Add username span with color
+            const usernameSpan = document.createElement('span');
+            usernameSpan.style.color = usernameColor;
+            usernameSpan.textContent = username + ": ";
+            this.dom.name.appendChild(usernameSpan);
+        }
+        
+        if (msg instanceof MeshLogChannelMessage) {
             // Preserve translation state during auto-refresh
             if (!this.isTranslated) {
                 this.dom.text.innerHTML = this._meshlog.sanitizeMessage(msg.data.message);
             }
-            this.dom.name.style.color = '#d87dff'
-            this.dom.text.style.color = 'white';
+            this.dom.text.style.color = '#E1F5FE';
             
             // Check channel-specific filters using database channel names
             let channelFiltered = false;
@@ -960,11 +1365,14 @@ class MeshLog {
         this.channels = {};
         this.channel_messages = {};
         this.direct_messages = {};
+        this.channelColors = {}; // Cache for consistent channel colors
+        this.usernameColors = {}; // Cache for consistent username colors
 
         this.messages = {};
 
         this.map = map;
         this.map_layers = {};
+        this.pathRenderTimers = {}; // Track pending path render timers per path ID
         this.visible_markers = [];
         this.visible_contacts = {};
         this.link_pairs = {};
@@ -972,11 +1380,19 @@ class MeshLog {
         this.dom_contacts = document.getElementById(contactsid);
         this.timer = false;
         this.autorefresh = 0;
+        this.selected_contact = null;
+        this.info_box = null;
 
         // epoch of newest object
         this.latest = 0;
         this.window_active = true;
         this.new_messages = {};
+        
+        // Lazy loading for messages
+        this.visibleMessageCount = 0;
+        this.messagesPerPage = (typeof isMobile !== 'undefined' && isMobile) ? 50 : 100;
+        this.isLoadingMore = false;
+        this.allMessagesRendered = false;
 
         const self = this;
 
@@ -1019,15 +1435,60 @@ class MeshLog {
         }
 
         this.dom_settings_types = document.getElementById(stypesid);
-        this.dom_settings_reporters = document.getElementById(sreportersid);
+        this.dom_settings_reporters = sreportersid ? document.getElementById(sreportersid) : null;
         this.dom_settings_contacts = document.getElementById(scontactsid);
+        this.dom_bots_list = document.getElementById('bots-list');
+        
+        // Cache frequently accessed DOM elements for performance
+        this.dom_favicon = document.getElementById('favicon');
+        
+        // Performance optimization: cache distance calculations
+        this.distanceCache = new Map();
+        
+        // Performance optimization: debounce timers
+        this.fadeMarkersTimer = null;
+        this.pathRenderTimer = null;
+        
+        // Performance optimization: track last bots update to enable incremental updates
+        this.lastBotsUpdate = 0;
+        this.botsCache = null;
 
         this.__init_types();
         this.__init_channels();
         this.__init_order();
         this.__init_translation();
+        this.__init_bots();
+        
+        // Initialize lazy loading scroll listener
+        this.__initLazyLoading();
 
         this.last = '2025-01-01 00:00:00';
+    }
+    
+    __initLazyLoading() {
+        const self = this;
+        const leftbar = document.getElementById('leftbar');
+        if (!leftbar) return;
+        
+        // Debounce scroll handler for performance
+        let scrollTimeout = null;
+        leftbar.addEventListener('scroll', function() {
+            if (scrollTimeout) {
+                clearTimeout(scrollTimeout);
+            }
+            scrollTimeout = setTimeout(() => {
+                // Check if user scrolled near bottom (within 200px)
+                const scrollTop = leftbar.scrollTop;
+                const scrollHeight = leftbar.scrollHeight;
+                const clientHeight = leftbar.clientHeight;
+                const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+                
+                // Load more if near bottom and not already loading
+                if (distanceFromBottom < 200 && !self.isLoadingMore && !self.allMessagesRendered) {
+                    self.loadMoreMessages();
+                }
+            }, 100);
+        });
     }
 
     sanitizeText(text) {
@@ -1105,10 +1566,6 @@ class MeshLog {
         this.update();
     }
 
-    __onReportersChanged() {
-        //this.updateReporters();
-    }
-
     sortContacts(fn=undefined, reverse=false) {
         if (!fn) {
             fn = this.order.fn;
@@ -1158,7 +1615,7 @@ class MeshLog {
         const self = this;
         for (let i=0;i<orders.length;i++) {
             let btn = document.createElement('button');
-            btn.classList.add('btn');
+            btn.classList.add('btn', 'sort-btn');
             btn.innerText = orders[i].name;
 
             if (i == 0) {
@@ -1188,6 +1645,11 @@ class MeshLog {
             container.appendChild(btn);
         }
 
+        // Add separator between sorting and action buttons
+        let separator = document.createElement('div');
+        separator.classList.add('button-separator');
+        container.appendChild(separator);
+
         // Add Collision Helper button
         let collisionBtn = document.createElement('button');
         collisionBtn.classList.add('btn', 'collision-helper-btn');
@@ -1214,6 +1676,15 @@ class MeshLog {
             this.openWeeklyStats();
         };
         container.appendChild(weeklyStatsBtn);
+
+        // Add Node Stats button
+        let nodeStatsBtn = document.createElement('button');
+        nodeStatsBtn.classList.add('btn', 'weekly-stats-btn');
+        nodeStatsBtn.innerText = 'Node Stats';
+        nodeStatsBtn.onclick = (e) => {
+            this.openNodeStats();
+        };
+        container.appendChild(nodeStatsBtn);
 
         this.dom_settings_contacts.appendChild(container);
     }
@@ -1354,7 +1825,13 @@ class MeshLog {
             }
             const self = this;
             this.reporters[id].enabled = true;
-            this.dom_settings_reporters.hidden = true;
+            if (this.dom_settings_reporters && typeof this.dom_settings_reporters !== 'undefined' && this.dom_settings_reporters !== null) {
+                try {
+                    this.dom_settings_reporters.hidden = true;
+                } catch (e) {
+                    // Ignore if property cannot be set
+                }
+            }
             // this.reporters[id].dom = this.dom_settings_reporters.appendChild(
             //     this.__createCb(
             //         this.reporters[id].data.name,
@@ -1369,13 +1846,148 @@ class MeshLog {
         });
     }
 
-    __init_contacts() {
-        // Add sorters:
-        //   By Date
-        //   By Name
-        // Add Display settings:
-        //   Show names
-        // Add some filters?
+    __init_bots() {
+        if (!this.dom_bots_list) return;
+        this.updateBotsList();
+    }
+
+    updateBotsList() {
+        if (!this.dom_bots_list) return;
+        
+        // Performance optimization: only update if data has changed significantly
+        const now = Date.now();
+        if (this.botsCache && (now - this.lastBotsUpdate) < 5000) {
+            // Use cached data if updated recently (within 5 seconds)
+            return;
+        }
+        this.lastBotsUpdate = now;
+
+        const reporterLastReport = {};
+
+        // Find last report time from advertisements (use sent_at for actual send time)
+        Object.entries(this.advertisements).forEach(([k, msg]) => {
+            if (msg.data.reporter_id && this.reporters[msg.data.reporter_id]) {
+                const reporterId = msg.data.reporter_id;
+                // Use sent_at (when message was sent) or created_at as fallback
+                const timeStr = msg.data.sent_at || msg.data.created_at;
+                const reportTime = timeStr ? new Date(timeStr).getTime() : 0;
+                if (reportTime > 0 && (!reporterLastReport[reporterId] || reportTime > reporterLastReport[reporterId])) {
+                    reporterLastReport[reporterId] = reportTime;
+                }
+            }
+        });
+
+        // Find last report time from channel messages (use sent_at for actual send time)
+        Object.entries(this.channel_messages).forEach(([k, msg]) => {
+            if (msg.data.reporter_id && this.reporters[msg.data.reporter_id]) {
+                const reporterId = msg.data.reporter_id;
+                // Use sent_at (when message was sent) or created_at as fallback
+                const timeStr = msg.data.sent_at || msg.data.created_at;
+                const reportTime = timeStr ? new Date(timeStr).getTime() : 0;
+                if (reportTime > 0 && (!reporterLastReport[reporterId] || reportTime > reporterLastReport[reporterId])) {
+                    reporterLastReport[reporterId] = reportTime;
+                }
+            }
+        });
+
+        // Find last report time from direct messages (use sent_at for actual send time)
+        Object.entries(this.direct_messages).forEach(([k, msg]) => {
+            if (msg.data.reporter_id && this.reporters[msg.data.reporter_id]) {
+                const reporterId = msg.data.reporter_id;
+                // Use sent_at (when message was sent) or created_at as fallback
+                const timeStr = msg.data.sent_at || msg.data.created_at;
+                const reportTime = timeStr ? new Date(timeStr).getTime() : 0;
+                if (reportTime > 0 && (!reporterLastReport[reporterId] || reportTime > reporterLastReport[reporterId])) {
+                    reporterLastReport[reporterId] = reportTime;
+                }
+            }
+        });
+
+        // Build the list
+        const bots = Object.entries(this.reporters).map(([id, reporter]) => {
+            const lastReportTime = reporterLastReport[id] || 0;
+            const lastReportDate = lastReportTime > 0 ? new Date(lastReportTime) : null;
+            const timeAgo = lastReportDate ? this.getTimeAgo(lastReportTime) : 'Never';
+            
+            return {
+                id: id,
+                name: reporter.data.name || 'Unknown',
+                color: dimColor(reporter.data.color || '#888'),
+                lastReport: lastReportDate,
+                timeAgo: timeAgo
+            };
+        });
+
+        // Sort by last report time (most recent first)
+        bots.sort((a, b) => {
+            const timeA = a.lastReport ? a.lastReport.getTime() : 0;
+            const timeB = b.lastReport ? b.lastReport.getTime() : 0;
+            return timeB - timeA;
+        });
+
+        // Cache the bots data for incremental updates
+        this.botsCache = bots;
+        
+        // Use document fragment for better DOM performance
+        const fragment = document.createDocumentFragment();
+        
+        if (bots.length === 0) {
+            const emptyDiv = document.createElement('div');
+            emptyDiv.classList.add('bots-empty');
+            emptyDiv.textContent = 'No bots found';
+            fragment.appendChild(emptyDiv);
+        } else {
+            bots.forEach(bot => {
+            const botItem = document.createElement('div');
+            botItem.classList.add('bot-item');
+            
+            const dot = document.createElement('span');
+            dot.classList.add('bot-dot');
+            dot.style.background = bot.color;
+            
+            const info = document.createElement('div');
+            info.classList.add('bot-info');
+            
+            const name = document.createElement('div');
+            name.classList.add('bot-name');
+            name.textContent = bot.name;
+            
+            const time = document.createElement('div');
+            time.classList.add('bot-time');
+            time.textContent = bot.timeAgo;
+            
+            info.appendChild(name);
+            info.appendChild(time);
+            
+            botItem.appendChild(dot);
+            botItem.appendChild(info);
+            
+            fragment.appendChild(botItem);
+            });
+        }
+        
+        // Single DOM update instead of multiple appends
+        this.dom_bots_list.innerHTML = '';
+        this.dom_bots_list.appendChild(fragment);
+    }
+
+    getTimeAgo(timestamp) {
+        const now = Date.now();
+        const diff = now - timestamp;
+        const seconds = Math.floor(diff / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+
+        if (days > 0) {
+            return `${days}d ago`;
+        } else if (hours > 0) {
+            return `${hours}h ago`;
+        } else if (minutes > 0) {
+            return `${minutes}m ago`;
+        } else {
+            return 'Just now';
+        }
     }
 
     __addObject(dataset, id, obj) {
@@ -1384,12 +1996,6 @@ class MeshLog {
         } else {
             dataset[id] = obj;
         }
-    }
-
-    __formatedTimestamp(d=new Date()) {
-        const date = d.toISOString().split('T')[0];
-        const time = d.toTimeString().split(' ')[0];
-        return `${date} ${time}`
     }
 
     __prepareQuery(params={}) {
@@ -1544,6 +2150,10 @@ class MeshLog {
     onLoadContacts() {
         let hashes = {};
         
+        // Use document fragment for batch DOM updates
+        const fragment = document.createDocumentFragment();
+        const contactsToAdd = [];
+        
         // First, process existing contacts
         Object.entries(this.contacts).forEach(([id,contact]) => {
             let advs = Object.values(this.advertisements)
@@ -1581,10 +2191,25 @@ class MeshLog {
                 hashes[hashstr].push(contact);
             }
 
-            contact.createDom(this.dom_contacts);
+            // Create DOM but don't append yet
+            const domElement = contact.createDom(null);
+            if (domElement) {
+                fragment.appendChild(domElement);
+            }
+            contactsToAdd.push(contact);
+        });
+        
+        // Batch DOM updates: add all contacts at once
+        if (fragment.hasChildNodes()) {
+            this.dom_contacts.appendChild(fragment);
+        }
+        
+        // Add markers to map and update (these are separate operations)
+        contactsToAdd.forEach(contact => {
             contact.addToMap(this.map);
             contact.update();
         });
+        
         this.sortContacts();
     }
 
@@ -1691,19 +2316,62 @@ class MeshLog {
     }
 
     openRepeaterSetup() {
-        // Check if browser supports Web Serial API
-        if ('serial' in navigator) {
-            // Browser supports serial connections, open the page
-            window.open('https://map.mc868.hu/config/repeater-setup.html', '_blank');
+        // Helper function to open in new tab (not popup)
+        const openInNewTab = (url) => {
+            const link = document.createElement('a');
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        // Intelligent check for Web Serial API support
+        const hasSerialAPI = 'serial' in navigator;
+        const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+        const serialFunctional = hasSerialAPI && 
+                                 navigator.serial && 
+                                 typeof navigator.serial.requestPort === 'function';
+        
+        if (serialFunctional) {
+            // Browser natively supports serial connections
+            openInNewTab('https://map.mc868.hu/config/repeater-setup.html');
+        } else if (isFirefox) {
+            // Firefox detected - check if addon might provide serial API
+            const hasSerialProperty = 'serial' in navigator;
+            if (hasSerialProperty) {
+                // Serial property exists (possibly from addon), allow opening
+                // The page itself will test if it's actually functional
+                if (confirm('Firefox detected with possible Web Serial API support.\n\n' +
+                           'If you have a Web Serial API addon installed, it may work.\n\n' +
+                           'Open Repeater Setup page in new tab?')) {
+                    openInNewTab('https://map.mc868.hu/config/repeater-setup.html');
+                }
+            } else {
+                // No serial API detected in Firefox
+                if (confirm('Web Serial API not detected in Firefox.\n\n' +
+                           'You can install a Web Serial API addon for Firefox:\n' +
+                           '• Search for "Web Serial API" in Firefox Add-ons\n' +
+                           '• Or use a browser with native support:\n' +
+                           '  - Google Chrome (version 89+)\n' +
+                           '  - Microsoft Edge (version 89+)\n' +
+                           '  - Opera (version 75+)\n\n' +
+                           'Open Repeater Setup page in new tab anyway?')) {
+                    openInNewTab('https://map.mc868.hu/config/repeater-setup.html');
+                }
+            }
         } else {
-            // Browser doesn't support serial connections, show alert
-            alert('Serial Connection Not Supported\n\n' +
-                  'Your browser does not support Web Serial API which is required for the Repeater Setup.\n\n' +
-                  'Please use one of these browsers:\n' +
-                  '• Google Chrome (version 89+)\n' +
-                  '• Microsoft Edge (version 89+)\n' +
-                  '• Opera (version 75+)\n\n' +
-                  'Note: Serial API must be enabled in browser settings.');
+            // Other browsers without native support
+            if (confirm('Web Serial API not detected.\n\n' +
+                       'Please use one of these browsers:\n' +
+                       '• Google Chrome (version 89+)\n' +
+                       '• Microsoft Edge (version 89+)\n' +
+                       '• Opera (version 75+)\n' +
+                       '• Firefox with Web Serial API addon\n\n' +
+                       'Open Repeater Setup page in new tab anyway?')) {
+                openInNewTab('https://map.mc868.hu/config/repeater-setup.html');
+            }
         }
     }
 
@@ -1904,6 +2572,115 @@ class MeshLog {
         }
     }
 
+    async openNodeStats() {
+        // Prevent multiple modals from opening (debounce)
+        if (this._nodeStatsModalOpen) {
+            return;
+        }
+        this._nodeStatsModalOpen = true;
+
+        // Create modal overlay
+        let modal = document.createElement('div');
+        modal.classList.add('collision-helper-modal', 'weekly-stats-modal');
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                this._nodeStatsModalOpen = false;
+            }
+        };
+
+        // Create modal content
+        let modalContent = document.createElement('div');
+        modalContent.classList.add('collision-helper-content', 'weekly-stats-content');
+        modalContent.onclick = (e) => e.stopPropagation();
+
+        // Create header
+        let header = document.createElement('div');
+        header.classList.add('collision-helper-header');
+        header.innerHTML = '<h3>Node Stats by Country</h3><button class="close-btn">&times;</button>';
+        header.querySelector('.close-btn').onclick = () => {
+            modal.remove();
+            this._nodeStatsModalOpen = false;
+        };
+
+        // Create loading indicator
+        let content = document.createElement('div');
+        content.classList.add('weekly-stats-content-body');
+        content.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">Loading stats...</p>';
+        modalContent.appendChild(header);
+        modalContent.appendChild(content);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        try {
+            // Fetch node stats from API
+            const response = await fetch('api/v1/node_stats/index.php');
+            if (!response.ok) {
+                if (response.status === 429) {
+                    const errorData = await response.json().catch(() => ({}));
+                    const retryAfter = response.headers.get('Retry-After') || '60';
+                    throw new Error(`Rate limit exceeded. Please try again in ${retryAfter} seconds.`);
+                }
+                const errorText = await response.text().catch(() => 'Unknown error');
+                throw new Error(`Failed to fetch node stats: ${response.status} ${errorText}`);
+            }
+            const stats = await response.json();
+
+            // Clear loading indicator
+            content.innerHTML = '';
+
+            // Nodes by Country Section
+            let countrySection = document.createElement('div');
+            countrySection.classList.add('stats-section');
+            countrySection.innerHTML = '<h4>Nodes by Country</h4>';
+            
+            let countryTable = document.createElement('table');
+            countryTable.classList.add('stats-table');
+            let countryTableHead = document.createElement('thead');
+            countryTableHead.innerHTML = '<tr><th>Country</th><th>Repeaters</th><th>Clients</th><th>Rooms</th><th>Sensors</th><th>Total</th></tr>';
+            countryTable.appendChild(countryTableHead);
+            
+            let countryTableBody = document.createElement('tbody');
+            if (stats.by_country && stats.by_country.length > 0) {
+                stats.by_country.forEach(country => {
+                    let row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><strong>${this.sanitizeText(country.country_name || 'Unknown')}</strong></td>
+                        <td>${country.repeaters || 0}</td>
+                        <td>${country.clients || 0}</td>
+                        <td>${country.rooms || 0}</td>
+                        <td>${country.sensors || 0}</td>
+                        <td style="color: #42a5f5;"><strong>${country.total || 0}</strong></td>
+                    `;
+                    countryTableBody.appendChild(row);
+                });
+            } else {
+                let row = document.createElement('tr');
+                row.innerHTML = '<td colspan="6" style="text-align: center; color: #888;">No nodes found</td>';
+                countryTableBody.appendChild(row);
+            }
+            countryTable.appendChild(countryTableBody);
+            countrySection.appendChild(countryTable);
+            
+            let countryTotal = document.createElement('div');
+            countryTotal.classList.add('stats-total');
+            countryTotal.innerHTML = `<strong>Total Nodes: ${stats.total || 0}</strong>`;
+            countrySection.appendChild(countryTotal);
+            content.appendChild(countrySection);
+
+        } catch (error) {
+            console.error('Error loading node stats:', error);
+            content.innerHTML = `<p style="text-align: center; color: #f44; padding: 20px;">Error loading stats: ${error.message}</p>`;
+        } finally {
+            // Reset flag if modal is removed
+            setTimeout(() => {
+                if (!document.body.contains(modal)) {
+                    this._nodeStatsModalOpen = false;
+                }
+            }, 100);
+        }
+    }
+
     addMessage(msg) {
         // identified by date + hash
         const hash = msg.data.hash;
@@ -1933,10 +2710,320 @@ class MeshLog {
     }
 
     update() {
-        for (const [key, msg] of Object.entries(this.messages)) {
-            msg.createDom(this.dom_logs);
-            msg.update();
+        // Get all messages sorted by time (newest first)
+        const sortedMessages = Object.entries(this.messages)
+            .map(([key, msg]) => ({ key, msg, time: msg.time || 0 }))
+            .sort((a, b) => b.time - a.time);
+        
+        // Track which messages are already rendered
+        const renderedKeys = new Set();
+        const existingChildren = Array.from(this.dom_logs.children);
+        existingChildren.forEach(child => {
+            if (child.dataset && child.dataset.messageHash) {
+                renderedKeys.add(child.dataset.messageHash);
+            }
+        });
+        
+        const totalMessages = sortedMessages.length;
+        const currentVisibleCount = renderedKeys.size;
+        
+        // Check if there are new messages that need to be rendered
+        const newMessages = sortedMessages.filter(({ key }) => !renderedKeys.has(key));
+        
+        // Determine how many messages to render
+        // On initial load or if we have fewer than one page, render all
+        const shouldRenderAll = currentVisibleCount === 0 || 
+                                currentVisibleCount >= totalMessages ||
+                                this.allMessagesRendered ||
+                                totalMessages <= this.messagesPerPage;
+        
+        if (shouldRenderAll) {
+            // Render all messages (initial load or small dataset)
+            // Use document fragment for batch DOM updates
+            const fragment = document.createDocumentFragment();
+            const messagesToCreate = [];
+            
+            sortedMessages.forEach(({ key, msg }) => {
+                if (!renderedKeys.has(key)) {
+                    messagesToCreate.push({ key, msg });
+                }
+            });
+            
+            // Create DOM elements in fragment first
+            messagesToCreate.forEach(({ key, msg }) => {
+                const domElement = msg.createDom(null);
+                if (domElement) {
+                    domElement.dataset.messageHash = key;
+                    fragment.appendChild(domElement);
+                }
+            });
+            
+            // Insert new messages at the top (newest first), append if no existing children
+            if (fragment.hasChildNodes()) {
+                if (this.dom_logs.firstChild) {
+                    this.dom_logs.insertBefore(fragment, this.dom_logs.firstChild);
+                } else {
+                    this.dom_logs.appendChild(fragment);
+                }
+            }
+            
+            // Update all messages (only update DOM, not recreate)
+            sortedMessages.forEach(({ key, msg }) => {
+                msg.update();
+            });
+            
+            this.visibleMessageCount = totalMessages;
+            this.allMessagesRendered = true;
+        } else {
+            // Lazy loading: only render visible messages
+            // Always include new messages at the top
+            const messagesToRender = [];
+            
+            // First, add all new messages (they should appear at the top)
+            newMessages.forEach(({ key, msg }) => {
+                messagesToRender.push({ key, msg });
+            });
+            
+            // Then, add existing visible messages up to the page limit
+            const existingMessagesToShow = Math.max(0, this.messagesPerPage - newMessages.length);
+            const existingMessages = sortedMessages
+                .filter(({ key }) => renderedKeys.has(key))
+                .slice(0, existingMessagesToShow);
+            existingMessages.forEach(({ key, msg }) => {
+                messagesToRender.push({ key, msg });
+            });
+            
+            // Use document fragment for batch DOM updates
+            const fragment = document.createDocumentFragment();
+            const messagesToCreate = [];
+            
+            messagesToRender.forEach(({ key, msg }) => {
+                if (!renderedKeys.has(key)) {
+                    messagesToCreate.push({ key, msg });
+                }
+            });
+            
+            // Create DOM elements in fragment
+            messagesToCreate.forEach(({ key, msg }) => {
+                const domElement = msg.createDom(null);
+                if (domElement) {
+                    domElement.dataset.messageHash = key;
+                    fragment.appendChild(domElement);
+                }
+            });
+            
+            // Insert new messages at the top (newest first), append if no existing children
+            if (fragment.hasChildNodes()) {
+                if (this.dom_logs.firstChild) {
+                    this.dom_logs.insertBefore(fragment, this.dom_logs.firstChild);
+                } else {
+                    this.dom_logs.appendChild(fragment);
+                }
+            }
+            
+            // Only update visible messages
+            messagesToRender.forEach(({ key, msg }) => {
+                msg.update();
+            });
+            
+            this.visibleMessageCount = Math.max(currentVisibleCount, messagesToRender.length);
+            this.allMessagesRendered = this.visibleMessageCount >= totalMessages;
         }
+    }
+    
+    loadMoreMessages() {
+        if (this.isLoadingMore || this.allMessagesRendered) return;
+        
+        this.isLoadingMore = true;
+        const self = this;
+        
+        // Get all messages sorted by time (newest first)
+        const sortedMessages = Object.entries(this.messages)
+            .map(([key, msg]) => ({ key, msg, time: msg.time || 0 }))
+            .sort((a, b) => b.time - a.time);
+        
+        const startIndex = this.visibleMessageCount;
+        const endIndex = Math.min(startIndex + this.messagesPerPage, sortedMessages.length);
+        const messagesToAdd = sortedMessages.slice(startIndex, endIndex);
+        
+        if (messagesToAdd.length === 0) {
+            this.allMessagesRendered = true;
+            this.isLoadingMore = false;
+            return;
+        }
+        
+        // Use requestAnimationFrame for smooth rendering
+        requestAnimationFrame(() => {
+            // createDom handles insertion order automatically based on time
+            // We just need to ensure messages are rendered
+            messagesToAdd.forEach(({ key, msg }) => {
+                // Check if already rendered
+                const existing = Array.from(self.dom_logs.children).find(
+                    child => child.dataset && child.dataset.messageHash === key
+                );
+                if (!existing) {
+                    const domElement = msg.createDom(self.dom_logs);
+                    if (domElement) {
+                        domElement.dataset.messageHash = key;
+                    }
+                }
+                msg.update();
+            });
+            
+            self.visibleMessageCount = endIndex;
+            self.allMessagesRendered = endIndex >= sortedMessages.length;
+            self.isLoadingMore = false;
+        });
+    }
+
+    filterByContact(contact) {
+        if (this.selected_contact && this.selected_contact.data.id === contact.data.id) {
+            this.clearFilter();
+            return;
+        }
+
+        this.selected_contact = contact;
+        this.visible_contacts = {};
+        this.visible_contacts[contact.data.id] = 1;
+
+        this.showInfoBox(contact);
+        this.update();
+    }
+
+    clearFilter() {
+        this.selected_contact = null;
+        this.visible_contacts = {};
+        this.hideInfoBox();
+        this.update();
+    }
+
+    showInfoBox(contact) {
+        if (this.info_box) {
+            this.hideInfoBox();
+        }
+
+        const box = document.createElement('div');
+        box.id = 'node-info-box';
+        box.classList.add('node-info-box');
+
+        const closeBtn = document.createElement('button');
+        closeBtn.classList.add('node-info-close');
+        closeBtn.innerHTML = '×';
+        closeBtn.onclick = () => {
+            this.clearFilter();
+        };
+
+        const title = document.createElement('div');
+        title.classList.add('node-info-title');
+        title.textContent = 'Node Information';
+
+        const content = document.createElement('div');
+        content.classList.add('node-info-content');
+
+        const nameRow = document.createElement('div');
+        nameRow.classList.add('node-info-row');
+        nameRow.innerHTML = `<strong>Name:</strong> <span>${this.sanitizeText(contact.adv ? contact.adv.data.name : contact.data.name || 'Unknown')}</span>`;
+
+        const typeRow = document.createElement('div');
+        typeRow.classList.add('node-info-row');
+        let typeText = 'Unknown';
+        if (contact.isClient()) typeText = 'Client';
+        else if (contact.isRepeater()) typeText = 'Repeater';
+        else if (contact.isRoom()) typeText = 'Room';
+        else if (contact.isSensor()) typeText = 'Sensor';
+        typeRow.innerHTML = `<strong>Type:</strong> <span>${typeText}</span>`;
+
+        const hashRow = document.createElement('div');
+        hashRow.classList.add('node-info-row');
+        hashRow.innerHTML = `<strong>Hash:</strong> <span>[${this.validateHash(contact.hash)}]</span>`;
+
+        const pubkeyRow = document.createElement('div');
+        pubkeyRow.classList.add('node-info-row');
+        const self = this;
+        const pubkeySpan = document.createElement('span');
+        pubkeySpan.classList.add('node-info-pubkey');
+        pubkeySpan.textContent = contact.data.public_key;
+        pubkeySpan.title = 'Click to copy contact URI';
+        pubkeySpan.onclick = async () => {
+            try {
+                const contactUri = `meshcore://${contact.data.public_key}`;
+                await navigator.clipboard.writeText(contactUri);
+                self.showCopyNotification();
+            } catch (err) {
+                console.error('Failed to copy:', err);
+            }
+        };
+        pubkeyRow.appendChild(document.createElement('strong')).textContent = 'Public Key: ';
+        pubkeyRow.appendChild(document.createTextNode(' '));
+        pubkeyRow.appendChild(pubkeySpan);
+
+        const coordsRow = document.createElement('div');
+        coordsRow.classList.add('node-info-row');
+        if (contact.adv && contact.adv.data.lat && contact.adv.data.lon) {
+            coordsRow.innerHTML = `<strong>Coordinates:</strong> <span>${contact.adv.data.lat.toFixed(6)}, ${contact.adv.data.lon.toFixed(6)}</span>`;
+        } else {
+            coordsRow.innerHTML = `<strong>Coordinates:</strong> <span>Not available</span>`;
+        }
+
+        const lastAdvRow = document.createElement('div');
+        lastAdvRow.classList.add('node-info-row');
+        if (contact.adv && contact.adv.data.sent_at) {
+            lastAdvRow.innerHTML = `<strong>Last Advertisement:</strong> <span>${this.sanitizeText(contact.adv.data.sent_at)}</span>`;
+        } else {
+            lastAdvRow.innerHTML = `<strong>Last Advertisement:</strong> <span>Not available</span>`;
+        }
+
+        const createdRow = document.createElement('div');
+        createdRow.classList.add('node-info-row');
+        if (contact.data.created_at) {
+            createdRow.innerHTML = `<strong>First Seen:</strong> <span>${this.sanitizeText(contact.data.created_at)}</span>`;
+        }
+
+        content.appendChild(nameRow);
+        content.appendChild(typeRow);
+        content.appendChild(hashRow);
+        content.appendChild(pubkeyRow);
+        content.appendChild(coordsRow);
+        content.appendChild(lastAdvRow);
+        if (contact.data.created_at) {
+            content.appendChild(createdRow);
+        }
+
+        box.appendChild(closeBtn);
+        box.appendChild(title);
+        box.appendChild(content);
+
+        const mapContainer = document.getElementById('map');
+        mapContainer.appendChild(box);
+
+        this.info_box = box;
+    }
+
+    hideInfoBox() {
+        if (this.info_box) {
+            this.info_box.remove();
+            this.info_box = null;
+        }
+    }
+
+    showCopyNotification() {
+        const notification = document.createElement('div');
+        notification.classList.add('copy-notification');
+        notification.textContent = 'Node URI exported to clipboard';
+        
+        const mapContainer = document.getElementById('map');
+        mapContainer.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => {
+                notification.remove();
+            }, 300);
+        }, 2000);
     }
 
     onLoadMessages() {
@@ -1944,12 +3031,17 @@ class MeshLog {
         Object.entries(this.channel_messages).forEach(([id,_]) => { this.addMessage(this.channel_messages[id]); });
         Object.entries(this.direct_messages).forEach(([id,_]) => { this.addMessage(this.direct_messages[id]); });
 
+        // Reset lazy loading state when new messages are loaded
+        this.visibleMessageCount = 0;
+        this.allMessagesRendered = false;
+        
         this.update();
     }
 
     onLoadAll() {
         this.onLoadContacts();
         this.onLoadMessages();
+        this.updateBotsList();
     }
 
     loadReporters(params={}, onload=null) {
@@ -1995,17 +3087,29 @@ class MeshLog {
     }
 
     fadeMarkers(opacity=0.2) {
-        const empty = this.visible_markers.length == 0; 
-        Object.entries(this.contacts).forEach(([k,v]) => {
-            if (!v.marker) return;
-            if (empty || this.visible_markers.includes(v.marker)) {
-                v.marker.setOpacity(1);
-                v.marker.setZIndexOffset(1000);
-            } else {
-                v.marker.setOpacity(opacity);
-                v.marker.setZIndexOffset(2);
-            }
-        });
+        // Debounce marker updates for better performance
+        if (this.fadeMarkersTimer) {
+            clearTimeout(this.fadeMarkersTimer);
+        }
+        
+        const self = this;
+        this.fadeMarkersTimer = setTimeout(() => {
+            // Use requestAnimationFrame for smooth updates
+            requestAnimationFrame(() => {
+                const empty = self.visible_markers.length == 0; 
+                Object.entries(self.contacts).forEach(([k,v]) => {
+                    if (!v.marker) return;
+                    if (empty || self.visible_markers.includes(v.marker)) {
+                        v.marker.setOpacity(1);
+                        v.marker.setZIndexOffset(1000);
+                    } else {
+                        v.marker.setOpacity(opacity);
+                        v.marker.setZIndexOffset(2);
+                    }
+                });
+                self.fadeMarkersTimer = null;
+            });
+        }, 16); // ~60fps debounce
     }
 
     validatePath(hashes, src) {
@@ -2129,12 +3233,48 @@ class MeshLog {
 
 
     calculateDistance(lat1, lon1, lat2, lon2) {
+        // Cache key for distance calculation
+        const cacheKey = `${lat1.toFixed(4)}_${lon1.toFixed(4)}_${lat2.toFixed(4)}_${lon2.toFixed(4)}`;
+        
+        if (this.distanceCache.has(cacheKey)) {
+            return this.distanceCache.get(cacheKey);
+        }
+        
         const latDiff = lat1 - lat2;
         const lonDiff = lon1 - lon2;
-        return Math.sqrt(latDiff * latDiff + lonDiff * lonDiff) * 111;
+        const distance = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff) * 111;
+        
+        // Cache the result (limit cache size to prevent memory issues)
+        if (this.distanceCache.size > 1000) {
+            // Clear oldest 500 entries when cache gets too large
+            const entries = Array.from(this.distanceCache.entries());
+            this.distanceCache.clear();
+            entries.slice(-500).forEach(([k, v]) => this.distanceCache.set(k, v));
+        }
+        this.distanceCache.set(cacheKey, distance);
+        
+        return distance;
     }
 
     showPath(id, path, src, dst, color) {
+        if (this.map_layers.hasOwnProperty(id)) return;
+        
+        // Cancel any pending render for this path
+        if (this.pathRenderTimers[id]) {
+            clearTimeout(this.pathRenderTimers[id]);
+        }
+        
+        const self = this;
+        this.pathRenderTimers[id] = setTimeout(() => {
+            // Check if path should still be shown (not hidden in the meantime)
+            if (!self.map_layers.hasOwnProperty(id)) {
+                self._renderPath(id, path, src, dst, color);
+            }
+            delete self.pathRenderTimers[id];
+        }, 50); // 50ms debounce for path rendering
+    }
+    
+    _renderPath(id, path, src, dst, color) {
         if (this.map_layers.hasOwnProperty(id)) return;
 
         const layers = [];
@@ -2232,8 +3372,36 @@ class MeshLog {
 
                 linkPairs[pairId]++;
 
-                layers.push(L.polyline([prev, current], {color: 'white', weight: lnOutline, offset: offset}));
-                layers.push(L.polyline([prev, current], {color: color, weight: lnWeight, offset: offset}));
+                if (offset !== 0) {
+                    // For offset lines, use straight polylines as offset doesn't work well with curved paths
+                    layers.push(L.polyline([prev, current], {
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        weight: lnOutline,
+                        offset: offset,
+                        opacity: 0.6
+                    }));
+                    layers.push(L.polyline([prev, current], {
+                        color: color,
+                        weight: lnWeight,
+                        offset: offset,
+                        opacity: 0.9
+                    }));
+                } else {
+                    // For non-offset lines, use curved paths
+                    const curvedPath = createCurvedPath(prev, current, 0.08);
+                    layers.push(L.polyline(curvedPath, {
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        weight: lnOutline,
+                        opacity: 0.6,
+                        smoothFactor: 1.0
+                    }));
+                    layers.push(L.polyline(curvedPath, {
+                        color: color,
+                        weight: lnWeight,
+                        opacity: 0.9,
+                        smoothFactor: 1.0
+                    }));
+                }
             }
 
             const lastHop = last[last.length - 1];
@@ -2250,8 +3418,36 @@ class MeshLog {
 
             linkPairs[pairId]++;
 
-            layers.push(L.polyline([lastHop, current], {color: 'white', weight: lnOutline, offset: offset}));
-            layers.push(L.polyline([lastHop, current], {color: color, weight: lnWeight, offset: offset}));
+            if (offset !== 0) {
+                // For offset lines, use straight polylines as offset doesn't work well with curved paths
+                layers.push(L.polyline([lastHop, current], {
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    weight: lnOutline,
+                    offset: offset,
+                    opacity: 0.6
+                }));
+                layers.push(L.polyline([lastHop, current], {
+                    color: color,
+                    weight: lnWeight,
+                    offset: offset,
+                    opacity: 0.9
+                }));
+            } else {
+                // For non-offset lines, use curved paths
+                const curvedPath = createCurvedPath(lastHop, current, 0.25);
+                layers.push(L.polyline(curvedPath, {
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    weight: lnOutline,
+                    opacity: 0.6,
+                    smoothFactor: 1.0
+                }));
+                layers.push(L.polyline(curvedPath, {
+                    color: color,
+                    weight: lnWeight,
+                    opacity: 0.9,
+                    smoothFactor: 1.0
+                }));
+            }
         }
 
         this.map_layers[id] = L.layerGroup(layers).addTo(map);
@@ -2259,6 +3455,12 @@ class MeshLog {
     }
 
     hidePath(id) {
+        // Cancel any pending render for this path
+        if (this.pathRenderTimers[id]) {
+            clearTimeout(this.pathRenderTimers[id]);
+            delete this.pathRenderTimers[id];
+        }
+        
         if (!this.map_layers.hasOwnProperty(id)) return;
         this.map.removeLayer(this.map_layers[id]);
         delete this.map_layers[id];
@@ -2286,9 +3488,13 @@ class MeshLog {
                     new Audio('assets/audio/notif.mp3').play();
                 }
 
-                document.getElementById('favicon').setAttribute('href','faviconr.ico');
+                if (this.dom_favicon) {
+                    this.dom_favicon.setAttribute('href','faviconr.ico');
+                }
                 document.title = `(${count}) EmpireMesh Log`; 
             }
+            // Update reporters list after new messages are loaded
+            this.updateBotsList();
         });
         this.setAutorefresh(this.interval);
     }
@@ -2320,15 +3526,11 @@ class MeshLog {
     }
 
     clearNotifications() {
-        this.new_messages = [];
-        document.getElementById('favicon').setAttribute('href','faviconw.ico');
+        this.new_messages = {};
+        if (this.dom_favicon) {
+            this.dom_favicon.setAttribute('href','faviconw.ico');
+        }
         document.title = `EmpireMesh Log`; 
-    }
-
-    showAllPaths() {
-        Object.entries(this.messages).forEach(([k,v]) => {
-            v.dom.group.onmouseover({});
-        });
     }
 
     isReporter(public_key) {
