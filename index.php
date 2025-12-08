@@ -261,12 +261,72 @@ var map = L.map('map', {
     touchZoom: true
 }).setView([47.1, 19.5], 8);
 
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Create single tile layer (OpenStreetMap)
+var mapTileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    updateWhenZooming: !isMobile, // Don't update tiles during zoom on mobile
-    updateWhenIdle: isMobile // Only update when idle on mobile
-}).addTo(map);
+    updateWhenZooming: !isMobile,
+    updateWhenIdle: isMobile
+});
+
+// Detect system theme preference
+function getSystemTheme() {
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+    }
+    return 'light';
+}
+
+// Load saved map theme preference, or use system preference as default
+var mapTheme = localStorage.getItem('mapTheme');
+if (!mapTheme) {
+    mapTheme = getSystemTheme();
+}
+mapTileLayer.addTo(map);
+
+// Apply dark mode filter if needed
+function applyMapTheme(theme) {
+    var mapContainer = document.getElementById('map');
+    if (theme === 'dark') {
+        mapContainer.classList.add('map-dark-mode');
+    } else {
+        mapContainer.classList.remove('map-dark-mode');
+    }
+}
+
+applyMapTheme(mapTheme);
+
+// Listen for system theme changes and update if no manual preference is saved
+if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+        // Only auto-update if user hasn't manually set a preference
+        if (!localStorage.getItem('mapTheme')) {
+            mapTheme = e.matches ? 'dark' : 'light';
+            applyMapTheme(mapTheme);
+        }
+    });
+}
+
+// Map theme toggle control
+L.Control.MapTheme = L.Control.extend({
+    onAdd: function(mapInstance) {
+        var container = L.DomUtil.create('div', 'leaflet-control-map-theme');
+        container.innerHTML = '<button id="map-theme-toggle" title="Toggle map theme">🌓</button>';
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.on(container, 'click', function() {
+            mapTheme = mapTheme === 'light' ? 'dark' : 'light';
+            localStorage.setItem('mapTheme', mapTheme);
+            applyMapTheme(mapTheme);
+        });
+        return container;
+    }
+});
+
+L.control.mapTheme = function(opts) {
+    return new L.Control.MapTheme(opts);
+};
+
+L.control.mapTheme({ position: 'topright' }).addTo(map);
 
 // Debounce zoom/move events on mobile to prevent freezing
 let zoomUpdateTimeout = null;
