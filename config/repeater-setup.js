@@ -13,6 +13,9 @@ class RepeaterSetup {
         this.aclEntries = [];
         this.repeatMode = null;
         this.pendingFactoryReset = false;
+        this.currentPublicKey = null;
+        this.occupiedIdsCache = null;
+        this.occupiedIdsCacheTime = null;
         this.init();
     }
 
@@ -239,6 +242,7 @@ class RepeaterSetup {
         this.nodeType = null;
         this.repeatMode = null;
         this.pendingFactoryReset = false;
+        this.currentPublicKey = null;
         
         const connectBtn = document.getElementById('connectBtn');
         connectBtn.textContent = 'Connect Serial';
@@ -368,6 +372,9 @@ class RepeaterSetup {
                 return;
             }
             if (prevCommand === 'get pub.key' && line.match(/^[0-9A-Fa-f]{64}$/)) {
+                // Store current repeater's public key for collision sanity check
+                this.currentPublicKey = line.toUpperCase();
+                document.getElementById('generatedPublicKey').value = line;
                 const repeaterId = line.substring(0, 2).toUpperCase();
                 this.updateRepeaterIdDisplay(repeaterId);
                 return;
@@ -392,6 +399,9 @@ class RepeaterSetup {
                     const publicKeyHex = this.uint8ArrayToHex(publicKeyBytes);
                     
                     document.getElementById('generatedPublicKey').value = publicKeyHex;
+                    
+                    // Store current repeater's public key for collision sanity check
+                    this.currentPublicKey = publicKeyHex.toUpperCase();
                     
                     // Set repeater ID (first 2 chars) and check collision
                     const repeaterId = publicKeyHex.substring(0, 2).toUpperCase();
@@ -455,6 +465,9 @@ class RepeaterSetup {
                     break;
                 case 'pub.key':
                 case 'pubkey':
+                    // Store current repeater's public key for collision sanity check
+                    this.currentPublicKey = value.toUpperCase();
+                    document.getElementById('generatedPublicKey').value = value;
                     const repeaterId = value.substring(0, 2).toUpperCase();
                     this.updateRepeaterIdDisplay(repeaterId);
                     break;
@@ -606,21 +619,36 @@ class RepeaterSetup {
         warningElement.style.display = 'none';
         
         try {
-            // Fetch collision data from map
-            const occupiedIds = await this.fetchOccupiedIds();
+            // Fetch only repeaters with the same ID (more efficient)
+            const occupiedIds = await this.fetchRepeatersById(repeaterId);
             
             if (occupiedIds.has(repeaterId)) {
-                const names = occupiedIds.get(repeaterId);
-                if (names.length > 1) {
-                    // Colliding - multiple repeaters
-                    idElement.style.color = '#f87171';
-                    idElement.title = `COLLISION: ${names.length} repeaters using this ID:\n${names.join('\n')}`;
-                    warningElement.style.display = 'block';
+                const entries = occupiedIds.get(repeaterId);
+                
+                // Sanity check: filter out the current repeater itself
+                // We compare full 64-char public keys (not just 2-char IDs) to distinguish
+                // between different repeaters that happen to share the same 2-char ID prefix
+                const otherRepeaters = entries.filter(entry => {
+                    return entry.publicKey !== this.currentPublicKey;
+                });
+                
+                if (otherRepeaters.length > 0) {
+                    // Real collision - other repeaters using this ID
+                    const names = otherRepeaters.map(e => e.name);
+                    if (otherRepeaters.length === 1) {
+                        idElement.style.color = '#f87171';
+                        idElement.title = `Occupied by: ${names[0]}`;
+                        warningElement.style.display = 'block';
+                    } else {
+                        idElement.style.color = '#f87171';
+                        idElement.title = `COLLISION: ${names.length} other repeaters using this ID:\n${names.join('\n')}`;
+                        warningElement.style.display = 'block';
+                    }
                 } else {
-                    // Occupied - single repeater
-                    idElement.style.color = '#f87171';
-                    idElement.title = `Occupied by: ${names[0]}`;
-                    warningElement.style.display = 'block';
+                    // Only colliding with itself - no real collision
+                    idElement.style.color = '#4ade80';
+                    idElement.title = 'Unoccupied ID (this repeater)';
+                    warningElement.style.display = 'none';
                 }
             } else {
                 // Unoccupied - green
@@ -1104,6 +1132,7 @@ class RepeaterSetup {
 
     async autoChooseId() {
         try {
+            // Need full list for auto-choose
             const occupiedIds = await this.fetchOccupiedIds();
 
             const unoccupiedIds = [];
@@ -1134,6 +1163,7 @@ class RepeaterSetup {
         modal.style.display = 'flex';
 
         try {
+            // Need full list for collision helper grid
             const occupiedIds = await this.fetchOccupiedIds();
             this.renderCollisionHelper(occupiedIds);
         } catch (error) {
@@ -1153,7 +1183,107 @@ class RepeaterSetup {
         };
     }
 
+    async fetchRepeatersById(targetId) {
+        // Check cache first (30 second TTL)
+        const cacheAge = this.occupiedIdsCacheTime ? Date.now() - this.occupiedIdsCacheTime : Infinity;
+        if (this.occupiedIdsCache && cacheAge < 30000) {
+            const cached = this.occupiedIdsCache.get(targetId);
+            if (cached !== undefined) {
+                // Return a Map with just this ID for consistency
+                const result = new Map();
+                result.set(targetId, cached);
+                return result;
+            }
+            // If ID not in cache, return empty (might be unoccupied)
+            return new Map();
+        }
+        
+        // Not in cache, fetch from API
+        // Note: API doesn't support filtering by ID, so we fetch all and filter client-side
+        try {
+            const response = await fetch('/api/v1/all', {
+                headers: {
+                    'Accept': 'application/json',
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            // Check different possible response structures
+            let contacts = null;
+            if (data.contacts && data.contacts.objects) {
+                contacts = data.contacts.objects;
+            } else if (data.contacts && Array.isArray(data.contacts)) {
+                contacts = data.contacts;
+            } else if (Array.isArray(data)) {
+                contacts = data;
+            }
+            
+            if (!contacts) {
+                throw new Error('No contacts found in API response');
+            }
+            
+            // Filter only repeaters with the target ID
+            const targetIdUpper = targetId.toUpperCase();
+            const matchingRepeaters = [];
+            let processedCount = 0;
+            
+            contacts.forEach(contact => {
+                processedCount++;
+                // Check if contact has an advertisement and if it's a repeater (type 2)
+                if (contact.advertisement && contact.advertisement.type === 2 && contact.public_key) {
+                    const pubkey = contact.public_key.toUpperCase();
+                    const id = pubkey.substring(0, 2).toUpperCase();
+                    
+                    // Only process if it matches our target ID
+                    if (id === targetIdUpper) {
+                        matchingRepeaters.push({
+                            name: contact.advertisement.name || 'Unknown',
+                            publicKey: pubkey
+                        });
+                    }
+                }
+            });
+            
+            // Build result map (only for this ID)
+            const result = new Map();
+            if (matchingRepeaters.length > 0) {
+                result.set(targetIdUpper, matchingRepeaters);
+            }
+            
+            // Update cache with this single ID (partial cache)
+            if (!this.occupiedIdsCache) {
+                this.occupiedIdsCache = new Map();
+            }
+            if (matchingRepeaters.length > 0) {
+                this.occupiedIdsCache.set(targetIdUpper, matchingRepeaters);
+            } else {
+                // Mark as unoccupied in cache
+                this.occupiedIdsCache.set(targetIdUpper, []);
+            }
+            this.occupiedIdsCacheTime = Date.now();
+            
+            this.logToConsole(`Collision check for ID ${targetIdUpper}: ${matchingRepeaters.length} repeater(s) found (processed ${processedCount} contacts)`, 'info');
+            
+            return result;
+        } catch (error) {
+            this.logToConsole(`Collision check failed: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+
     async fetchOccupiedIds() {
+        // Check cache (30 second TTL)
+        const cacheAge = this.occupiedIdsCacheTime ? Date.now() - this.occupiedIdsCacheTime : Infinity;
+        if (this.occupiedIdsCache && cacheAge < 30000) {
+            // Return full cached map
+            return this.occupiedIdsCache;
+        }
+        
         try {
             const response = await fetch('/api/v1/all', {
                 headers: {
@@ -1184,15 +1314,25 @@ class RepeaterSetup {
                 contacts.forEach(contact => {
                     // Check if contact has an advertisement and if it's a repeater (type 2)
                     if (contact.advertisement && contact.advertisement.type === 2 && contact.public_key) {
-                        const pubkey = contact.public_key;
-                        const id = pubkey.substring(0, 2).toUpperCase();
+                        const pubkey = contact.public_key.toUpperCase();
+                        const id = pubkey.substring(0, 2).toUpperCase(); // Extract 2-char ID prefix
                         if (!occupied.has(id)) {
                             occupied.set(id, []);
                         }
-                        occupied.get(id).push(contact.advertisement.name || 'Unknown');
+                        // Store full 64-char public key (not just 2-char ID) to distinguish
+                        // between different repeaters that share the same 2-char ID prefix
+                        occupied.get(id).push({
+                            name: contact.advertisement.name || 'Unknown',
+                            publicKey: pubkey
+                        });
                         repeaterCount++;
                     }
                 });
+                
+                // Cache the result
+                this.occupiedIdsCache = occupied;
+                this.occupiedIdsCacheTime = Date.now();
+                
                 this.logToConsole(`Collision check: ${repeaterCount} repeaters, ${occupied.size} unique IDs`, 'info');
             } else {
                 throw new Error('No contacts found in API response');
@@ -1216,13 +1356,26 @@ class RepeaterSetup {
             cell.textContent = hexId;
 
             if (occupiedIds.has(hexId)) {
-                const names = occupiedIds.get(hexId);
-                if (names.length > 1) {
-                    cell.classList.add('colliding');
-                    cell.title = `Colliding:\n${names.join('\n')}`;
+                const entries = occupiedIds.get(hexId);
+                
+                // Sanity check: filter out the current repeater itself
+                const otherRepeaters = entries.filter(entry => {
+                    return entry.publicKey !== this.currentPublicKey;
+                });
+                
+                if (otherRepeaters.length > 0) {
+                    const names = otherRepeaters.map(e => e.name);
+                    if (otherRepeaters.length > 1) {
+                        cell.classList.add('colliding');
+                        cell.title = `Colliding:\n${names.join('\n')}`;
+                    } else {
+                        cell.classList.add('occupied');
+                        cell.title = `Occupied: ${names[0]}`;
+                    }
                 } else {
-                    cell.classList.add('occupied');
-                    cell.title = `Occupied: ${names[0]}`;
+                    // Only colliding with itself - show as unoccupied
+                    cell.classList.add('unoccupied');
+                    cell.title = 'Unoccupied (this repeater)';
                 }
             } else {
                 cell.classList.add('unoccupied');
@@ -1354,6 +1507,9 @@ class RepeaterSetup {
             } else {
                 complianceStatus.style.display = 'none';
             }
+            
+            // Store current repeater's public key for collision sanity check
+            this.currentPublicKey = selected.public.toUpperCase();
             
             // Update repeater ID display with collision check
             const repeaterId = selected.public.substring(0, 2).toUpperCase();
@@ -1637,6 +1793,9 @@ class RepeaterSetup {
 
             await this.sendCommand(`set prv.key ${privateKey}`);
             
+            // Store current repeater's public key for collision sanity check
+            this.currentPublicKey = publicKey.toUpperCase();
+            
             // Update repeater ID display
             const repeaterId = publicKey.substring(0, 2).toUpperCase();
             await this.updateRepeaterIdDisplay(repeaterId);
@@ -1764,6 +1923,8 @@ class RepeaterSetup {
                     document.getElementById('privateKey').value = settings.privateKey;
                     if (settings.publicKey) {
                         document.getElementById('generatedPublicKey').value = settings.publicKey;
+                        // Store current repeater's public key for collision sanity check
+                        this.currentPublicKey = settings.publicKey.toUpperCase();
                     }
                     // Clear compliance status when loading keys from file
                     this.clearComplianceStatus();

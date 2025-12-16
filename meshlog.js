@@ -487,8 +487,6 @@ class MeshLogContact extends MeshLogObject {
         icdivroot.appendChild(icdivch1);
         icdivroot.appendChild(innerIcon);
 
-        innerIcon.classList.add('marker-icon-img');
-
         if (!this.isClient()) {
             if (this.adv.isVeryExpired()) {
                 icdivch1.classList.add("missing");

@@ -1,0 +1,3 @@
+# Deny all direct access to lib directory files
+Require all denied
+
