@@ -1199,9 +1199,9 @@ class RepeaterSetup {
         }
         
         // Not in cache, fetch from API
-        // Note: API doesn't support filtering by ID, so we fetch all and filter client-side
+        // Use higher count to get all repeaters, then filter client-side for the target ID
         try {
-            const response = await fetch('/api/v1/all', {
+            const response = await fetch('/api/v1/all?count=5000', {
                 headers: {
                     'Accept': 'application/json',
                 }
@@ -1227,15 +1227,17 @@ class RepeaterSetup {
                 throw new Error('No contacts found in API response');
             }
             
-            // Filter only repeaters with the target ID
+            // Filter only repeaters (type 2) with the target ID
             const targetIdUpper = targetId.toUpperCase();
             const matchingRepeaters = [];
             let processedCount = 0;
+            let repeaterCount = 0;
             
             contacts.forEach(contact => {
                 processedCount++;
                 // Check if contact has an advertisement and if it's a repeater (type 2)
                 if (contact.advertisement && contact.advertisement.type === 2 && contact.public_key) {
+                    repeaterCount++;
                     const pubkey = contact.public_key.toUpperCase();
                     const id = pubkey.substring(0, 2).toUpperCase();
                     
@@ -1267,7 +1269,34 @@ class RepeaterSetup {
             }
             this.occupiedIdsCacheTime = Date.now();
             
-            this.logToConsole(`Collision check for ID ${targetIdUpper}: ${matchingRepeaters.length} repeater(s) found (processed ${processedCount} contacts)`, 'info');
+            // Build verbose log message
+            if (matchingRepeaters.length === 0) {
+                this.logToConsole(`Collision check for ID ${targetIdUpper}: No repeaters found (unoccupied) - processed ${repeaterCount} repeaters from ${processedCount} contacts`, 'info');
+            } else {
+                // Check if any of the found repeaters is us
+                const ourRepeater = this.currentPublicKey ? matchingRepeaters.find(r => r.publicKey === this.currentPublicKey) : null;
+                const otherRepeaters = this.currentPublicKey ? matchingRepeaters.filter(r => r.publicKey !== this.currentPublicKey) : matchingRepeaters;
+                
+                let logMessage = `Collision check for ID ${targetIdUpper}: ${matchingRepeaters.length} repeater(s) found (from ${repeaterCount} total repeaters, ${processedCount} contacts)`;
+                
+                if (ourRepeater) {
+                    logMessage += ` - Found us: "${ourRepeater.name}"`;
+                    if (otherRepeaters.length > 0) {
+                        const otherNames = otherRepeaters.map(r => `"${r.name}"`).join(', ');
+                        logMessage += ` | Other(s): ${otherNames}`;
+                    } else {
+                        logMessage += ` (only us, no collision)`;
+                    }
+                } else {
+                    const names = matchingRepeaters.map(r => `"${r.name}"`).join(', ');
+                    logMessage += ` - Other repeater(s): ${names}`;
+                    if (this.currentPublicKey) {
+                        logMessage += ` (not us)`;
+                    }
+                }
+                
+                this.logToConsole(logMessage, 'info');
+            }
             
             return result;
         } catch (error) {
@@ -1285,7 +1314,7 @@ class RepeaterSetup {
         }
         
         try {
-            const response = await fetch('/api/v1/all', {
+            const response = await fetch('/api/v1/all?count=5000', {
                 headers: {
                     'Accept': 'application/json',
                 }
