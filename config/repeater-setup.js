@@ -16,6 +16,7 @@ class RepeaterSetup {
         this.currentPublicKey = null;
         this.occupiedIdsCache = null;
         this.occupiedIdsCacheTime = null;
+        this.occupiedIdsCacheFull = false;
         this.init();
     }
 
@@ -116,6 +117,15 @@ class RepeaterSetup {
                 const input = document.getElementById(targetId);
                 if (input.type === 'password') {
                     input.type = 'text';
+                } else if (targetId === 'privateKey') {
+                    // Private key uses text-security CSS instead of type='password'
+                    if (input.style.webkitTextSecurity === 'disc') {
+                        input.style.webkitTextSecurity = 'none';
+                        input.style.textSecurity = 'none';
+                    } else {
+                        input.style.webkitTextSecurity = 'disc';
+                        input.style.textSecurity = 'disc';
+                    }
                 } else {
                     input.type = 'password';
                 }
@@ -243,7 +253,8 @@ class RepeaterSetup {
         this.repeatMode = null;
         this.pendingFactoryReset = false;
         this.currentPublicKey = null;
-        
+        this.occupiedIdsCacheFull = false;
+
         const connectBtn = document.getElementById('connectBtn');
         connectBtn.textContent = 'Connect Serial';
         connectBtn.className = 'btn-primary';
@@ -611,12 +622,14 @@ class RepeaterSetup {
     async updateRepeaterIdDisplay(repeaterId) {
         const idElement = document.getElementById('repeaterId');
         const warningElement = document.getElementById('collisionWarning');
+        const spinnerElement = document.getElementById('collisionCheckSpinner');
         idElement.textContent = repeaterId;
         
-        // Set default color while checking
+        // Set default color while checking and show spinner
         idElement.style.color = '#fbbf24';
         idElement.title = 'Checking collision status...';
         warningElement.style.display = 'none';
+        if (spinnerElement) spinnerElement.style.display = 'inline-block';
         
         try {
             // Fetch only repeaters with the same ID (more efficient)
@@ -661,6 +674,9 @@ class RepeaterSetup {
             idElement.style.color = '#888';
             idElement.title = `Could not verify collision status.\nError: ${error.message}\n\nClick "Show Console" to see details.`;
             warningElement.style.display = 'none';
+        } finally {
+            // Hide spinner when done
+            if (spinnerElement) spinnerElement.style.display = 'none';
         }
     }
 
@@ -1164,7 +1180,25 @@ class RepeaterSetup {
 
         try {
             // Need full list for collision helper grid
+            this.logToConsole(`Current repeater public key: ${this.currentPublicKey || 'NOT SET'}`, 'info');
             const occupiedIds = await this.fetchOccupiedIds();
+            
+            // Debug: Check if our repeater is in the map
+            if (this.currentPublicKey) {
+                const ourId = this.currentPublicKey.substring(0, 2).toUpperCase();
+                if (occupiedIds.has(ourId)) {
+                    const entries = occupiedIds.get(ourId);
+                    const ourEntry = entries.find(e => e.publicKey === this.currentPublicKey);
+                    if (ourEntry) {
+                        this.logToConsole(`Found our repeater in collision map: ID=${ourId}, Name="${ourEntry.name}"`, 'info');
+                    } else {
+                        this.logToConsole(`Our ID ${ourId} is in map but our public key not found. Entries: ${entries.map(e => e.publicKey.substring(0, 8) + '...').join(', ')}`, 'error');
+                    }
+                } else {
+                    this.logToConsole(`Our repeater ID ${ourId} not found in collision map`, 'error');
+                }
+            }
+            
             this.renderCollisionHelper(occupiedIds);
         } catch (error) {
             console.error('Failed to fetch collision data:', error);
@@ -1186,7 +1220,8 @@ class RepeaterSetup {
     async fetchRepeatersById(targetId) {
         // Check cache first (30 second TTL)
         const cacheAge = this.occupiedIdsCacheTime ? Date.now() - this.occupiedIdsCacheTime : Infinity;
-        if (this.occupiedIdsCache && cacheAge < 30000) {
+        if (this.occupiedIdsCache && cacheAge < 30000 && this.occupiedIdsCacheFull) {
+            // Only use cache if it's a full cache, not partial
             const cached = this.occupiedIdsCache.get(targetId);
             if (cached !== undefined) {
                 // Return a Map with just this ID for consistency
@@ -1258,6 +1293,7 @@ class RepeaterSetup {
             }
             
             // Update cache with this single ID (partial cache)
+            // Don't set the cache as full since this is only a partial fetch
             if (!this.occupiedIdsCache) {
                 this.occupiedIdsCache = new Map();
             }
@@ -1268,6 +1304,7 @@ class RepeaterSetup {
                 this.occupiedIdsCache.set(targetIdUpper, []);
             }
             this.occupiedIdsCacheTime = Date.now();
+            this.occupiedIdsCacheFull = false; // Mark as partial cache
             
             // Build verbose log message
             if (matchingRepeaters.length === 0) {
@@ -1306,12 +1343,15 @@ class RepeaterSetup {
     }
 
     async fetchOccupiedIds() {
-        // Check cache (30 second TTL)
+        // Check cache (30 second TTL) - only use if it's a full cache
         const cacheAge = this.occupiedIdsCacheTime ? Date.now() - this.occupiedIdsCacheTime : Infinity;
-        if (this.occupiedIdsCache && cacheAge < 30000) {
+        if (this.occupiedIdsCache && cacheAge < 30000 && this.occupiedIdsCacheFull) {
             // Return full cached map
+            this.logToConsole(`Using cached collision data (${this.occupiedIdsCache.size} IDs)`, 'info');
             return this.occupiedIdsCache;
         }
+        
+        this.logToConsole('Fetching fresh collision data from API...', 'info');
         
         try {
             const response = await fetch('/api/v1/all?count=5000', {
@@ -1350,19 +1390,21 @@ class RepeaterSetup {
                         }
                         // Store full 64-char public key (not just 2-char ID) to distinguish
                         // between different repeaters that share the same 2-char ID prefix
+                        const name = contact.advertisement.name || contact.name || 'Unknown';
                         occupied.get(id).push({
-                            name: contact.advertisement.name || 'Unknown',
+                            name: name,
                             publicKey: pubkey
                         });
                         repeaterCount++;
                     }
                 });
                 
-                // Cache the result
+                // Cache the result as a full cache
                 this.occupiedIdsCache = occupied;
                 this.occupiedIdsCacheTime = Date.now();
+                this.occupiedIdsCacheFull = true; // Mark as full cache
                 
-                this.logToConsole(`Collision check: ${repeaterCount} repeaters, ${occupied.size} unique IDs`, 'info');
+                this.logToConsole(`Collision check: ${repeaterCount} repeaters, ${occupied.size} unique IDs (showing in collision helper)`, 'info');
             } else {
                 throw new Error('No contacts found in API response');
             }
@@ -1377,35 +1419,55 @@ class RepeaterSetup {
     renderCollisionHelper(occupiedIds) {
         const grid = document.getElementById('hexGrid');
         grid.innerHTML = '';
+        
+        // Get current repeater's ID if available
+        const currentRepeaterId = this.currentPublicKey ? this.currentPublicKey.substring(0, 2).toUpperCase() : null;
 
         for (let i = 1; i <= 254; i++) {
             const hexId = i.toString(16).padStart(2, '0').toUpperCase();
             const cell = document.createElement('div');
             cell.className = 'hex-cell';
             cell.textContent = hexId;
+            
+            // Check if this is our current repeater's ID
+            const isCurrentId = currentRepeaterId && hexId === currentRepeaterId;
 
             if (occupiedIds.has(hexId)) {
                 const entries = occupiedIds.get(hexId);
+                const names = entries.map(e => e.name || 'Unknown');
                 
-                // Sanity check: filter out the current repeater itself
-                const otherRepeaters = entries.filter(entry => {
-                    return entry.publicKey !== this.currentPublicKey;
-                });
+                // Check if any of the entries is the current repeater
+                const hasCurrentRepeater = this.currentPublicKey && entries.some(e => e.publicKey === this.currentPublicKey);
+                const otherRepeaters = this.currentPublicKey ? entries.filter(e => e.publicKey !== this.currentPublicKey) : entries;
                 
-                if (otherRepeaters.length > 0) {
-                    const names = otherRepeaters.map(e => e.name);
-                    if (otherRepeaters.length > 1) {
-                        cell.classList.add('colliding');
-                        cell.title = `Colliding:\n${names.join('\n')}`;
+                // Show all repeaters in the table, but visually distinguish collision states
+                if (entries.length > 1) {
+                    // Multiple repeaters (real collision)
+                    if (hasCurrentRepeater) {
+                        // Current repeater involved in collision - blue background with red text
+                        cell.classList.add('current-colliding');
                     } else {
-                        cell.classList.add('occupied');
-                        cell.title = `Occupied: ${names[0]}`;
+                        // Other repeaters colliding - red background with red text
+                        cell.classList.add('colliding');
                     }
+                    let tooltip = `Colliding (${entries.length}):\n${names.join('\n')}`;
+                    if (hasCurrentRepeater) {
+                        tooltip += '\n\n(includes this repeater)';
+                    }
+                    cell.title = tooltip;
+                } else if (hasCurrentRepeater) {
+                    // Single repeater and it's us - show in blue with green text
+                    cell.classList.add('current');
+                    cell.title = `${names[0]} (this repeater)`;
                 } else {
-                    // Only colliding with itself - show as unoccupied
-                    cell.classList.add('unoccupied');
-                    cell.title = 'Unoccupied (this repeater)';
+                    // Single repeater but not us - yellow
+                    cell.classList.add('occupied');
+                    cell.title = `Occupied: ${names[0]}`;
                 }
+            } else if (isCurrentId) {
+                // This is our ID but not in the API yet (haven't advertised)
+                cell.classList.add('current');
+                cell.title = 'This repeater (not yet advertised)';
             } else {
                 cell.classList.add('unoccupied');
                 cell.title = 'Unoccupied';
@@ -1633,15 +1695,15 @@ class RepeaterSetup {
     async initializeNobleEd25519() {
         if (!this.nobleEd25519) {
             try {
-                // Try Skypack first since it works
+                // Try Skypack CDN first
                 this.nobleEd25519 = await import('https://cdn.skypack.dev/noble-ed25519');
-                console.log('✓ noble-ed25519 loaded successfully from Skypack');
+                this.logToConsole('✓ Ed25519 library loaded from CDN', 'info');
             } catch (error) {
-                console.error('Failed to load noble-ed25519 from Skypack, trying offline fallback:', error);
+                this.logToConsole('CDN failed, using offline fallback', 'info');
                 try {
-                    // Use offline fallback - full CDN version saved locally
+                    // Use offline fallback
                     this.nobleEd25519 = await import('./noble-ed25519-offline.js');
-                    console.log('✓ noble-ed25519 loaded successfully (offline fallback)');
+                    this.logToConsole('✓ Ed25519 library loaded (offline)', 'info');
                 } catch (offlineError) {
                     console.error('Failed to load noble-ed25519 from all sources:', offlineError);
                     throw new Error('Failed to load Ed25519 library. Please check your internet connection and ensure noble-ed25519-offline.js is available.');

@@ -452,6 +452,16 @@ h3 {
     color: #fbbf24;
 }
 
+.hex-cell.current {
+    background: #1a3a5a;
+    color: #4ade80;
+}
+
+.hex-cell.current-colliding {
+    background: #1a3a5a;
+    color: #f87171;
+}
+
 .hex-cell.colliding {
     background: #5a1a1a;
     color: #f87171;
@@ -460,6 +470,18 @@ h3 {
 .hex-cell:hover {
     transform: scale(1.1);
     z-index: 10;
+}
+
+.collision-spinner {
+    display: inline-block;
+    font-size: 18px;
+    animation: spin 1s linear infinite;
+    color: #fbbf24;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 .console-container {

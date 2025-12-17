@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <title>MeshCore Repeater Setup</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="repeater-setup.css">
@@ -50,6 +51,7 @@
                     <label>Repeater ID:</label>
                     <div>
                         <span id="repeaterId" class="monospace" style="font-size: 24px; font-weight: bold; letter-spacing: 2px;">-</span>
+                        <span id="collisionCheckSpinner" class="collision-spinner" style="display: none; margin-left: 8px;">⟳</span>
                         <div id="collisionWarning" style="color: #f87171; font-size: 11px; font-weight: bold; margin-top: 2px; display: none;">⚠ COLLISION!</div>
                     </div>
                 </div>
@@ -78,16 +80,16 @@
             <h2>Name & Location</h2>
             <div class="form-group">
                 <label>Node Name:</label>
-                <input type="text" id="nodeName" maxlength="32" placeholder="Enter node name">
+                <input type="text" id="nodeName" name="nodeName" maxlength="32" placeholder="Enter node name" title="Node name">
             </div>
             <div class="form-row">
                 <div class="form-group">
                     <label>Latitude:</label>
-                    <input type="number" id="latitude" step="0.000001" placeholder="47.4979">
+                    <input type="number" id="latitude" name="latitude" step="0.000001" placeholder="47.4979" title="Latitude">
                 </div>
                 <div class="form-group">
                     <label>Longitude:</label>
-                    <input type="number" id="longitude" step="0.000001" placeholder="19.0402">
+                    <input type="number" id="longitude" name="longitude" step="0.000001" placeholder="19.0402" title="Longitude">
                 </div>
                 <button id="btnShowMap" class="btn">Map</button>
             </div>
@@ -119,7 +121,7 @@
                 <div class="key-display">
                     <div class="key-item">
                         <span>Private:</span>
-                        <input type="password" id="privateKey" class="monospace" readonly>
+                        <input type="text" id="privateKey" class="monospace" readonly style="-webkit-text-security: disc; text-security: disc;">
                         <button class="btn-eye" data-target="privateKey">👁</button>
                     </div>
                     <div class="key-item">
@@ -181,7 +183,7 @@
             <h2>Radio Settings</h2>
             <div class="form-group">
                 <label>Preset:</label>
-                <select id="preset">
+                <select id="preset" name="preset" title="Radio preset">
                     <option value="">Loading presets...</option>
                 </select>
             </div>
@@ -192,7 +194,7 @@
                 </div>
                 <div class="form-group">
                     <label>Bandwidth (kHz):</label>
-                    <select id="bandwidth">
+                    <select id="bandwidth" name="bandwidth" title="Bandwidth">
                         <option value="62.5">62.5</option>
                         <option value="125">125</option>
                         <option value="250">250</option>
@@ -201,7 +203,7 @@
                 </div>
                 <div class="form-group">
                     <label>Spreading Factor:</label>
-                    <select id="spreadingFactor">
+                    <select id="spreadingFactor" name="spreadingFactor" title="Spreading Factor">
                         <option value="6">6</option>
                         <option value="7">7</option>
                         <option value="8">8</option>
@@ -213,7 +215,7 @@
                 </div>
                 <div class="form-group">
                     <label>Coding Rate:</label>
-                    <select id="codingRate">
+                    <select id="codingRate" name="codingRate" title="Coding Rate">
                         <option value="5">4/5</option>
                         <option value="6">4/6</option>
                         <option value="7">4/7</option>
