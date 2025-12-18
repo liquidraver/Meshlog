@@ -1365,6 +1365,10 @@ class MeshLog {
         this.direct_messages = {};
         this.channelColors = {}; // Cache for consistent channel colors
         this.usernameColors = {}; // Cache for consistent username colors
+        
+        // Collision helper cache
+        this.collisionHelperCache = null;
+        this.collisionHelperCacheTime = null;
 
         this.messages = {};
 
@@ -2244,21 +2248,28 @@ class MeshLog {
         let tableContainer = document.createElement('div');
         tableContainer.classList.add('collision-helper-table');
 
-        // Show loading state
-        tableContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #888;">Loading repeaters...</div>';
-        modalContent.appendChild(header);
-        modalContent.appendChild(tableContainer);
-        modal.appendChild(modalContent);
-        document.body.appendChild(modal);
-
-        // Fetch all repeaters from API (not just loaded ones)
+        // Check cache (30 second TTL)
+        const cacheAge = this.collisionHelperCacheTime ? Date.now() - this.collisionHelperCacheTime : Infinity;
         let repeaterContacts = {};
-        try {
-            const response = await fetch('/api/v1/all?count=5000', {
-                headers: {
-                    'Accept': 'application/json',
-                }
-            });
+        
+        if (this.collisionHelperCache && cacheAge < 30000) {
+            // Use cached data
+            repeaterContacts = this.collisionHelperCache;
+        } else {
+            // Show loading state
+            tableContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #888;">Loading repeaters...</div>';
+            modalContent.appendChild(header);
+            modalContent.appendChild(tableContainer);
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+
+            // Fetch all repeaters from API (not just loaded ones)
+            try {
+                const response = await fetch('/api/v1/all?count=5000', {
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                });
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -2295,38 +2306,59 @@ class MeshLog {
                 }
             });
             
-        } catch (error) {
-            console.error('Failed to fetch all repeaters:', error);
-            tableContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #ff6666;">Failed to load repeaters. Using loaded contacts only.</div>';
-            // Fallback to using loaded contacts only
-            Object.entries(this.contacts).forEach(([id, contact]) => {
-                let advs = Object.values(this.advertisements)
-                    .filter(item => item.data.contact_id == id)
-                    .sort((a, b) => {
-                        const aTime = a.data.sent_at || a.data.created_at || '';
-                        const bTime = b.data.sent_at || b.data.created_at || '';
-                        return bTime.localeCompare(aTime);
-                    });
-                let adv = advs.length > 0 ? advs[0] : null;
-                if (!adv && contact.data.advertisement) {
-                    adv = new MeshLogAdvertisement(this, contact.data.advertisement);
-                }
-                if (!adv) return;
+                // Cache the result
+                this.collisionHelperCache = repeaterContacts;
+                this.collisionHelperCacheTime = Date.now();
+            } catch (error) {
+                console.error('Failed to fetch all repeaters:', error);
+                tableContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #ff6666;">Failed to load repeaters. Using loaded contacts only.</div>';
+                // Fallback to using loaded contacts only
+                Object.entries(this.contacts).forEach(([id, contact]) => {
+                    let advs = Object.values(this.advertisements)
+                        .filter(item => item.data.contact_id == id)
+                        .sort((a, b) => {
+                            const aTime = a.data.sent_at || a.data.created_at || '';
+                            const bTime = b.data.sent_at || b.data.created_at || '';
+                            return bTime.localeCompare(aTime);
+                        });
+                    let adv = advs.length > 0 ? advs[0] : null;
+                    if (!adv && contact.data.advertisement) {
+                        adv = new MeshLogAdvertisement(this, contact.data.advertisement);
+                    }
+                    if (!adv) return;
 
-                if (!contact.data.public_key || contact.data.public_key.length < 2) return;
+                    if (!contact.data.public_key || contact.data.public_key.length < 2) return;
 
-                let hashstr = contact.data.public_key.substr(0, 2).toLowerCase();
-                const advType = adv && adv.data && adv.data.type != null ? adv.data.type : null;
-                const isRepeater = advType == 2 || advType === 2 || advType === '2';
-                
-                if (isRepeater) {
-                    repeaterContacts[hashstr] = repeaterContacts[hashstr] || [];
-                    repeaterContacts[hashstr].push({
-                        name: adv.data.name || 'Unknown',
-                        publicKey: contact.data.public_key
-                    });
-                }
-            });
+                    let hashstr = contact.data.public_key.substr(0, 2).toLowerCase();
+                    const advType = adv && adv.data && adv.data.type != null ? adv.data.type : null;
+                    const isRepeater = advType == 2 || advType === 2 || advType === '2';
+                    
+                    if (isRepeater) {
+                        repeaterContacts[hashstr] = repeaterContacts[hashstr] || [];
+                        repeaterContacts[hashstr].push({
+                            name: adv.data.name || 'Unknown',
+                            publicKey: contact.data.public_key
+                        });
+                    }
+                });
+            }
+        }
+        
+        // If we showed loading, clear it now and append modal if not already appended
+        if (tableContainer.innerHTML.includes('Loading')) {
+            tableContainer.innerHTML = '';
+            if (!modalContent.parentElement) {
+                modalContent.appendChild(header);
+                modalContent.appendChild(tableContainer);
+                modal.appendChild(modalContent);
+                document.body.appendChild(modal);
+            }
+        } else if (!modalContent.parentElement) {
+            // Cache hit - append modal immediately
+            modalContent.appendChild(header);
+            modalContent.appendChild(tableContainer);
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
         }
 
         // Clear loading message and generate hex ID grid (01 to FE)
