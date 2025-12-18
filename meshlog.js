@@ -428,7 +428,7 @@ class MeshLogContact extends MeshLogObject {
         this.map = map;
 
         if (!this.adv || (this.adv.data.lat == 0 && this.adv.data.lon == 0)) {
-            return
+            return;
         }
 
         let iconUrl = 'assets/img/tower.svg';
@@ -2009,7 +2009,7 @@ class MeshLog {
 
         // max count
         if (params.hasOwnProperty('count')) {
-            query.before = params['count'];
+            query.count = params['count'];
         }
 
         // reporter ids
@@ -2119,6 +2119,10 @@ class MeshLog {
 
 
     loadAll(params={}, onload=null) {
+        // Ensure we request enough contacts for initial load
+        if (!params.count && !params.after_ms) {
+            params.count = 2000; // Request more contacts for initial load (reduced from 3000 for better performance)
+        }
         this.__fetchQuery(params, 'api/v1/all', data => {
             this.__loadObjects(this.reporters, data.reporters, MeshLogReporter);
             this.__loadObjects(this.contacts, data.contacts, MeshLogContact);
@@ -2165,6 +2169,10 @@ class MeshLog {
 
             if (!adv && contact.data.advertisement) {
                 adv = new MeshLogAdvertisement(this, contact.data.advertisement);
+                // Ensure contact_id is set if missing (for embedded advertisements)
+                if (adv && !adv.data.contact_id && contact.data.id) {
+                    adv.data.contact_id = contact.data.id;
+                }
             }
             
             if (!adv) return;
@@ -2208,10 +2216,10 @@ class MeshLog {
             contact.update();
         });
         
-        this.sortContacts();
-    }
+            this.sortContacts();
+        }
 
-    showCollisionHelper() {
+    async showCollisionHelper() {
         // Create modal overlay
         let modal = document.createElement('div');
         modal.classList.add('collision-helper-modal');
@@ -2236,46 +2244,93 @@ class MeshLog {
         let tableContainer = document.createElement('div');
         tableContainer.classList.add('collision-helper-table');
 
-        // Generate collision data using existing logic
-        let hashes = {};
+        // Show loading state
+        tableContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #888;">Loading repeaters...</div>';
+        modalContent.appendChild(header);
+        modalContent.appendChild(tableContainer);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // Fetch all repeaters from API (not just loaded ones)
         let repeaterContacts = {};
-
-        // Build the same collision detection as in onLoadContacts
-        Object.entries(this.contacts).forEach(([id, contact]) => {
-            let advs = Object.values(this.advertisements)
-                .filter(item => item.data.contact_id == id)
-                .sort((a, b) => {
-                    const aTime = a.data.sent_at || a.data.created_at || '';
-                    const bTime = b.data.sent_at || b.data.created_at || '';
-                    return bTime.localeCompare(aTime);
-                });
-            let adv = advs.length > 0 ? advs[0] : null;
-            if (!adv && contact.data.advertisement) {
-                adv = new MeshLogAdvertisement(this, contact.data.advertisement);
-            }
-            if (!adv) return;
-
-            let hashstr = contact.data.public_key.substr(0, 2).toLowerCase();
-            const isRepeater = adv && adv.data.type == 2;
-            
-            if (isRepeater) {
-                repeaterContacts[hashstr] = repeaterContacts[hashstr] || [];
-                repeaterContacts[hashstr].push({
-                    name: adv.data.name || 'Unknown',
-                    contact: contact
-                });
-
-                if (hashes.hasOwnProperty(hashstr)) {
-                    hashes[hashstr].forEach(c => c.flags.dupe = true);
-                    contact.flags.dupe = true;
-                } else {
-                    hashes[hashstr] = [];
+        try {
+            const response = await fetch('/api/v1/all?count=5000', {
+                headers: {
+                    'Accept': 'application/json',
                 }
-                hashes[hashstr].push(contact);
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-        });
+            
+            const data = await response.json();
+            
+            // Check different possible response structures
+            let contacts = null;
+            if (data.contacts && data.contacts.objects) {
+                contacts = data.contacts.objects;
+            } else if (data.contacts && Array.isArray(data.contacts)) {
+                contacts = data.contacts;
+            } else if (Array.isArray(data)) {
+                contacts = data;
+            }
+            
+            if (!contacts) {
+                throw new Error('No contacts found in API response');
+            }
+            
+            // Process all contacts to find repeaters
+            contacts.forEach(contact => {
+                // Check if contact has an advertisement and if it's a repeater (type 2)
+                if (contact.advertisement && contact.advertisement.type === 2 && contact.public_key) {
+                    const pubkey = contact.public_key.toUpperCase();
+                    const hexId = pubkey.substring(0, 2).toLowerCase();
+                    
+                    repeaterContacts[hexId] = repeaterContacts[hexId] || [];
+                    repeaterContacts[hexId].push({
+                        name: contact.advertisement.name || 'Unknown',
+                        publicKey: pubkey
+                    });
+                }
+            });
+            
+        } catch (error) {
+            console.error('Failed to fetch all repeaters:', error);
+            tableContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #ff6666;">Failed to load repeaters. Using loaded contacts only.</div>';
+            // Fallback to using loaded contacts only
+            Object.entries(this.contacts).forEach(([id, contact]) => {
+                let advs = Object.values(this.advertisements)
+                    .filter(item => item.data.contact_id == id)
+                    .sort((a, b) => {
+                        const aTime = a.data.sent_at || a.data.created_at || '';
+                        const bTime = b.data.sent_at || b.data.created_at || '';
+                        return bTime.localeCompare(aTime);
+                    });
+                let adv = advs.length > 0 ? advs[0] : null;
+                if (!adv && contact.data.advertisement) {
+                    adv = new MeshLogAdvertisement(this, contact.data.advertisement);
+                }
+                if (!adv) return;
 
-        // Generate hex ID grid (01 to FE)
+                if (!contact.data.public_key || contact.data.public_key.length < 2) return;
+
+                let hashstr = contact.data.public_key.substr(0, 2).toLowerCase();
+                const advType = adv && adv.data && adv.data.type != null ? adv.data.type : null;
+                const isRepeater = advType == 2 || advType === 2 || advType === '2';
+                
+                if (isRepeater) {
+                    repeaterContacts[hashstr] = repeaterContacts[hashstr] || [];
+                    repeaterContacts[hashstr].push({
+                        name: adv.data.name || 'Unknown',
+                        publicKey: contact.data.public_key
+                    });
+                }
+            });
+        }
+
+        // Clear loading message and generate hex ID grid (01 to FE)
+        tableContainer.innerHTML = '';
         let grid = document.createElement('div');
         grid.classList.add('hex-grid');
 
@@ -2307,10 +2362,6 @@ class MeshLog {
         }
 
         tableContainer.appendChild(grid);
-        modalContent.appendChild(header);
-        modalContent.appendChild(tableContainer);
-        modal.appendChild(modalContent);
-        document.body.appendChild(modal);
     }
 
     openRepeaterSetup() {
@@ -3120,7 +3171,10 @@ class MeshLog {
             
             for (const v of Object.values(contacts)) {
                 if (v.hash === hash && v.adv && !v.adv.isExpired() && v.isRepeater()) {
-                    candidates.push(v);
+                    // Exclude repeaters with zero or missing coordinates
+                    if (v.adv.data && v.adv.data.lat != 0 && v.adv.data.lon != 0) {
+                        candidates.push(v);
+                    }
                 }
             }
             
@@ -3158,7 +3212,10 @@ class MeshLog {
                             
                             for (const v of Object.values(contacts)) {
                                 if (v.hash === secondHash && v.adv && !v.adv.isExpired() && v.isRepeater()) {
-                                    secondHopCandidates.push(v);
+                                    // Exclude repeaters with zero or missing coordinates
+                                    if (v.adv.data && v.adv.data.lat != 0 && v.adv.data.lon != 0) {
+                                        secondHopCandidates.push(v);
+                                    }
                                 }
                             }
                             
@@ -3308,22 +3365,28 @@ class MeshLog {
                 }
             } else if (src && src.adv && src.adv.data && !src.isClient()) {
                 // For repeater advertisements, add the source repeater as the first hop
-                last.push([src.adv.data.lat, src.adv.data.lon]);
-                if (src.marker) {
-                    visibleMarkers.push(src.marker);
-                    map.removeLayer(src.marker);
-                    src.marker.addTo(map);
+                // Only add if coordinates are valid (not zero)
+                if (src.adv.data.lat != 0 && src.adv.data.lon != 0) {
+                    last.push([src.adv.data.lat, src.adv.data.lon]);
+                    if (src.marker) {
+                        visibleMarkers.push(src.marker);
+                        map.removeLayer(src.marker);
+                        src.marker.addTo(map);
+                    }
                 }
             }
             
             if (hashes.length > 0) {
                 const pathNodes = this.validatePath(hashes, src);
                 for (const node of pathNodes) {
-                    last.push([node.adv.data.lat, node.adv.data.lon]);
-                    if (node.marker) {
-                        visibleMarkers.push(node.marker);
-                        map.removeLayer(node.marker);
-                        node.marker.addTo(map);
+                    // Only add nodes with valid coordinates (not zero)
+                    if (node.adv && node.adv.data && node.adv.data.lat != 0 && node.adv.data.lon != 0) {
+                        last.push([node.adv.data.lat, node.adv.data.lon]);
+                        if (node.marker) {
+                            visibleMarkers.push(node.marker);
+                            map.removeLayer(node.marker);
+                            node.marker.addTo(map);
+                        }
                     }
                 }
             }
@@ -3403,6 +3466,15 @@ class MeshLog {
             }
 
             const lastHop = last[last.length - 1];
+            // Only draw to destination if it has valid coordinates (not zero)
+            if (dst.data.lat == 0 && dst.data.lon == 0) {
+                // Destination has zero coordinates, skip drawing the final segment
+                if (layers.length > 0) {
+                    this.map_layers[id] = L.layerGroup(layers).addTo(map);
+                    this.fadeMarkers();
+                }
+                return;
+            }
             const current = [dst.data.lat, dst.data.lon];
             
             const pairId = `${lastHop[0]}-${lastHop[1]}_${current[0]}-${current[1]}`;
