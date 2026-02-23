@@ -1377,6 +1377,7 @@ class MeshLog {
         this.pathRenderTimers = {}; // Track pending path render timers per path ID
         this.visible_markers = [];
         this.visible_contacts = {};
+        this.reporterMarkers = {};
         this.link_pairs = {};
         this.dom_logs = document.getElementById(logsid);
         this.dom_contacts = document.getElementById(contactsid);
@@ -1446,10 +1447,11 @@ class MeshLog {
         
         // Performance optimization: cache distance calculations
         this.distanceCache = new Map();
+        // Cache resolved hop sequences per (path, source) to stabilize routing
+        this.resolvedPaths = new Map();
         
         // Performance optimization: debounce timers
         this.fadeMarkersTimer = null;
-        this.pathRenderTimer = null;
         
         // Performance optimization: track last bots update to enable incremental updates
         this.lastBotsUpdate = 0;
@@ -1530,6 +1532,56 @@ class MeshLog {
         if (/^#[0-9A-Fa-f]{6}$/.test(color)) return color;
         if (/^#[0-9A-Fa-f]{3}$/.test(color)) return color;
         return '#000000';
+    }
+
+    addReporterMarkers() {
+        if (!this.map || !this.reporters) return;
+
+        Object.entries(this.reporters).forEach(([id, reporter]) => {
+            if (!reporter || !reporter.data) return;
+
+            // Avoid recreating markers for the same reporter
+            if (this.reporterMarkers[id]) return;
+
+            const lat = parseFloat(reporter.data.lat);
+            const lon = parseFloat(reporter.data.lon);
+
+            // Require valid, non-zero coordinates
+            if (!lat || !lon) return;
+
+            const color = this.sanitizeColor(reporter.data.color || '#ffffff');
+            const name = this.sanitizeText(reporter.data.name || 'Reporter');
+
+            // Use receipt.svg, tinted via inline SVG in a divIcon
+            const hw = '20px';
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('reporter-icon');
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('height', hw);
+            svg.setAttribute('width', hw);
+            svg.setAttribute('viewBox', '0 -960 960 960');
+            svg.setAttribute('fill', color);
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z');
+            svg.appendChild(path);
+            wrapper.appendChild(svg);
+
+            const icon = L.divIcon({
+                className: 'reporter-div-icon',
+                html: wrapper,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+
+            const marker = L.marker([lat, lon], { icon });
+
+            marker.bindTooltip(name, { direction: 'top' });
+            marker.addTo(this.map);
+
+            this.reporterMarkers[id] = marker;
+        });
     }
 
 
@@ -3123,6 +3175,7 @@ class MeshLog {
         this.onLoadContacts();
         this.onLoadMessages();
         this.updateBotsList();
+        this.addReporterMarkers();
     }
 
     loadReporters(params={}, onload=null) {
@@ -3196,6 +3249,26 @@ class MeshLog {
     validatePath(hashes, src) {
         const pathNodes = [];
         const contacts = this.contacts;
+        
+        // Build a stable cache key for this logical path + source
+        const srcKey = src && src.data && src.data.public_key ? src.data.public_key : '';
+        const pathKey = `${hashes.join(',')}|${srcKey}`;
+        
+        // If we have a cached, still-valid resolution, reuse it
+        if (this.resolvedPaths.has(pathKey)) {
+            const cached = this.resolvedPaths.get(pathKey).filter(node =>
+                node &&
+                node.adv &&
+                node.adv.data &&
+                node.adv.data.lat != 0 &&
+                node.adv.data.lon != 0 &&
+                !node.adv.isExpired() &&
+                node.isRepeater()
+            );
+            if (cached.length > 0) {
+                return cached;
+            }
+        }
         
         for (let i = 0; i < hashes.length; i++) {
             const candidates = [];
@@ -3315,21 +3388,42 @@ class MeshLog {
             }
         }
         
+        // Cache resolved path for stability, with simple size control
+        if (pathNodes.length > 0) {
+            if (this.resolvedPaths.size > 1000) {
+                this.resolvedPaths.clear();
+            }
+            this.resolvedPaths.set(pathKey, pathNodes);
+        }
+
         return pathNodes;
     }
 
 
     calculateDistance(lat1, lon1, lat2, lon2) {
-        // Cache key for distance calculation
-        const cacheKey = `${lat1.toFixed(4)}_${lon1.toFixed(4)}_${lat2.toFixed(4)}_${lon2.toFixed(4)}`;
+        // Build an order-independent cache key so A->B and B->A share the same entry
+        const aKey = `${lat1.toFixed(4)}_${lon1.toFixed(4)}`;
+        const bKey = `${lat2.toFixed(4)}_${lon2.toFixed(4)}`;
+        const cacheKey = aKey < bKey ? `${aKey}__${bKey}` : `${bKey}__${aKey}`;
         
         if (this.distanceCache.has(cacheKey)) {
             return this.distanceCache.get(cacheKey);
         }
         
-        const latDiff = lat1 - lat2;
-        const lonDiff = lon1 - lon2;
-        const distance = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff) * 111;
+        // Haversine formula for great-circle distance (in km)
+        const toRad = Math.PI / 180;
+        const phi1 = lat1 * toRad;
+        const phi2 = lat2 * toRad;
+        const dPhi = (lat2 - lat1) * toRad;
+        const dLambda = (lon2 - lon1) * toRad;
+        
+        const sinDphi = Math.sin(dPhi / 2);
+        const sinDlambda = Math.sin(dLambda / 2);
+        const a = sinDphi * sinDphi +
+                  Math.cos(phi1) * Math.cos(phi2) * sinDlambda * sinDlambda;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const R = 6371; // Earth radius in km
+        const distance = R * c;
         
         // Cache the result (limit cache size to prevent memory issues)
         if (this.distanceCache.size > 1000) {
