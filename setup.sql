@@ -11,7 +11,7 @@ CREATE TABLE `advertisements` (
   `lat` decimal(9,6) NOT NULL,
   `lon` decimal(9,6) NOT NULL,
   `country_code` varchar(2) DEFAULT NULL COMMENT 'ISO 3166-1 alpha-2 country code (HU, SK, PL, etc.)',
-  `path` varchar(192) NOT NULL,
+  `path` varchar(512) NOT NULL,
   `type` tinyint(4) NOT NULL,
   `flags` smallint(4) NOT NULL,
   `snr` smallint(6) NOT NULL COMMENT 'last hop snr',
@@ -47,7 +47,7 @@ CREATE TABLE `direct_messages` (
   `hash` varchar(16) NOT NULL,
   `name` varchar(123) NOT NULL,
   `message` varchar(320) NOT NULL,
-  `path` varchar(192) NOT NULL,
+  `path` varchar(512) NOT NULL,
   `sent_at` timestamp NOT NULL COMMENT 'sender timestamp',
   `received_at` timestamp NOT NULL COMMENT 'reporter timestamp',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
@@ -81,7 +81,7 @@ CREATE TABLE `channel_messages` (
   `channel_id` int(11) NOT NULL COMMENT 'channel id',
   `name` varchar(128) NOT NULL,
   `message` varchar(320) NOT NULL,
-  `path` varchar(192) NOT NULL,
+  `path` varchar(512) NOT NULL,
   `sent_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `received_at` timestamp NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()

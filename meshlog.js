@@ -92,7 +92,9 @@ class MeshLogContact extends MeshLogObject {
     constructor(meshlog, data) {
         super(meshlog, data);
         this.flags.dupe = false;
-        this.hash = data.public_key.substr(0, 2).toLowerCase();
+        this.hash  = data.public_key.substr(0, 2).toLowerCase(); // 1-byte path hash
+        this.hash2 = data.public_key.substr(0, 4).toLowerCase(); // 2-byte path hash
+        this.hash3 = data.public_key.substr(0, 6).toLowerCase(); // 3-byte path hash
         this.messages = {};
     }
 
@@ -133,7 +135,9 @@ class MeshLogContact extends MeshLogObject {
                     let parts = path.split(",");
 
                     const contact = this._meshlog.contacts[msg.data.contact_id];
-                    const idx = parts.indexOf(this.hash);
+                    const pathHashSize = this._meshlog.getPathHashSize(path);
+                    const selfHash = this._meshlog.getContactHash(this, pathHashSize);
+                    const idx = parts.indexOf(selfHash);
                     let src = -1;
                     let dst = -1;
 
@@ -199,9 +203,12 @@ class MeshLogContact extends MeshLogObject {
 
         Object.entries(links).forEach(([hash,dir]) => {
             // Find all contacts with this hash (handles colliding IDs)
+            // Hash could be a path hash (2/4/6 chars) or a public key (64 chars)
+            const linkHashSize = hash.length === 6 ? 3 : hash.length === 4 ? 2 : 1;
             let candidates = [];
             Object.entries(this._meshlog.contacts).forEach(([k,v]) => {
-                if (v.hash === hash && v.adv && !v.adv.isVeryExpired()) {
+                const cmpHash = hash.length > 6 ? v.data.public_key : this._meshlog.getContactHash(v, linkHashSize);
+                if (cmpHash === hash && v.adv && !v.adv.isVeryExpired()) {
                     candidates.push(v);
                 }
             });
@@ -622,6 +629,12 @@ class MeshLogGroupChild extends MeshLogObject {
         date.classList.add("sp");
         date.classList.add("c");
 
+        let hashBadge = document.createElement("span");
+        hashBadge.classList.add("hash-badge");
+
+        date.appendChild(document.createTextNode(''));
+        date.appendChild(hashBadge);
+
         let text = document.createElement("span");
         text.classList.add("sp");
 
@@ -659,6 +672,7 @@ class MeshLogGroupChild extends MeshLogObject {
         this.dom = {
             container,
             date,
+            hashBadge,
             text
         };
         
@@ -667,7 +681,13 @@ class MeshLogGroupChild extends MeshLogObject {
 
     updateDom() {
         if (!this.dom) return;
-        this.dom.date.innerText = this._meshlog.sanitizeText(this.data.sent_at);
+        this.dom.date.firstChild.textContent = this._meshlog.sanitizeText(this.data.sent_at);
+        if (this.data.path) {
+            const hashSize = this._meshlog.getPathHashSize(this.data.path);
+            this.dom.hashBadge.textContent = ` (${hashSize}-byte)`;
+        } else {
+            this.dom.hashBadge.textContent = '';
+        }
         this.dom.text.innerText = this.data.path ? this._meshlog.sanitizeText(this.data.path) : 'direct';
     }
 
@@ -948,6 +968,12 @@ class MeshLogMessageGroup extends MeshLogObject {
         date.classList.add("sp");
         date.classList.add("c");
 
+        let hashBadgeGroup = document.createElement("span");
+        hashBadgeGroup.classList.add("hash-badge");
+
+        date.appendChild(document.createTextNode(''));
+        date.appendChild(hashBadgeGroup);
+
         // Only create translate button for non-advertisement messages
         let translateBtn = null;
         const firstMsg = this.first();
@@ -1021,6 +1047,7 @@ class MeshLogMessageGroup extends MeshLogObject {
             group,
             name,
             date,
+            hashBadge: hashBadgeGroup,
             text,
             right,
             count,
@@ -1089,7 +1116,18 @@ class MeshLogMessageGroup extends MeshLogObject {
         if (!msg) return;
 
         // Display timestamp as-is (server is already in CEST/UTC+2)
-        this.dom.date.innerText = this._meshlog.sanitizeText(msg.data.sent_at);
+        this.dom.date.firstChild.textContent = this._meshlog.sanitizeText(msg.data.sent_at);
+        // Find best hash size across all reporters (prefer 1/2/3-byte over direct)
+        let bestHashSize = 0;
+        for (const m of Object.values(this.messages)) {
+            const hs = this._meshlog.getPathHashSize(m.data.path);
+            if (hs > bestHashSize) bestHashSize = hs;
+        }
+        if (bestHashSize > 0) {
+            this.dom.hashBadge.textContent = ` (${bestHashSize}-byte)`;
+        } else {
+            this.dom.hashBadge.textContent = '';
+        }
         
         const sz = this.size();
         this.dom.count.innerText = `×${sz}`;
@@ -1230,6 +1268,14 @@ class MeshLogMessageGroup extends MeshLogObject {
             hidden = !this._meshlog.settings.types.direct_messages;
         } else {
             // Unknown instance type
+        }
+
+        // Hash size filter (uses bestHashSize computed above for badge)
+        if (!hidden) {
+            if (bestHashSize === 0 && !this._meshlog.settings.hash_sizes.direct) hidden = true;
+            else if (bestHashSize === 1 && !this._meshlog.settings.hash_sizes.byte_1) hidden = true;
+            else if (bestHashSize === 2 && !this._meshlog.settings.hash_sizes.byte_2) hidden = true;
+            else if (bestHashSize === 3 && !this._meshlog.settings.hash_sizes.byte_3) hidden = true;
         }
 
         let allvis = Object.keys(this._meshlog.visible_contacts).length < 1;
@@ -1422,6 +1468,12 @@ class MeshLog {
                 hungary: true,
                 hungary_hash: true,
                 ping: true,
+            },
+            hash_sizes: {
+                byte_1: true,
+                byte_2: true,
+                byte_3: true,
+                direct: true,
             },
             reporters: {
 
@@ -1740,6 +1792,15 @@ class MeshLog {
         };
         container.appendChild(nodeStatsBtn);
 
+        // Add Packet Stats button
+        let packetStatsBtn = document.createElement('button');
+        packetStatsBtn.classList.add('btn', 'weekly-stats-btn');
+        packetStatsBtn.innerText = 'Packet Stats';
+        packetStatsBtn.onclick = (e) => {
+            this.openPacketStats();
+        };
+        container.appendChild(packetStatsBtn);
+
         this.dom_settings_contacts.appendChild(container);
     }
 
@@ -1811,6 +1872,60 @@ class MeshLog {
                 this.settings.types.direct_messages,
                 (e) => {
                     this.settings.types.direct_messages = e.target.checked;
+                    self.__onTypesChanged(e);
+                }
+            )
+        );
+
+        // Hash size filter separator
+        let hashSizeLabel = document.createElement('div');
+        hashSizeLabel.style.cssText = 'color: #888; font-size: 11px; margin-top: 6px; border-top: 1px solid #444; padding-top: 6px;';
+        hashSizeLabel.textContent = 'Hash Size';
+        channelControls.appendChild(hashSizeLabel);
+
+        channelControls.appendChild(
+            this.__createCb(
+                "1-byte packets",
+                "assets/img/beacon.png",
+                this.settings.hash_sizes.byte_1,
+                (e) => {
+                    this.settings.hash_sizes.byte_1 = e.target.checked;
+                    self.__onTypesChanged(e);
+                }
+            )
+        );
+
+        channelControls.appendChild(
+            this.__createCb(
+                "2-byte packets",
+                "assets/img/beacon.png",
+                this.settings.hash_sizes.byte_2,
+                (e) => {
+                    this.settings.hash_sizes.byte_2 = e.target.checked;
+                    self.__onTypesChanged(e);
+                }
+            )
+        );
+
+        channelControls.appendChild(
+            this.__createCb(
+                "3-byte packets",
+                "assets/img/beacon.png",
+                this.settings.hash_sizes.byte_3,
+                (e) => {
+                    this.settings.hash_sizes.byte_3 = e.target.checked;
+                    self.__onTypesChanged(e);
+                }
+            )
+        );
+
+        channelControls.appendChild(
+            this.__createCb(
+                "Direct (0-hop)",
+                "assets/img/beacon.png",
+                this.settings.hash_sizes.direct,
+                (e) => {
+                    this.settings.hash_sizes.direct = e.target.checked;
                     self.__onTypesChanged(e);
                 }
             )
@@ -2814,6 +2929,160 @@ class MeshLog {
         }
     }
 
+    async openPacketStats() {
+        if (this._packetStatsModalOpen) return;
+        this._packetStatsModalOpen = true;
+
+        let modal = document.createElement('div');
+        modal.classList.add('collision-helper-modal', 'weekly-stats-modal');
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                this._packetStatsModalOpen = false;
+            }
+        };
+
+        let modalContent = document.createElement('div');
+        modalContent.classList.add('collision-helper-content', 'weekly-stats-content');
+        modalContent.onclick = (e) => e.stopPropagation();
+
+        let header = document.createElement('div');
+        header.classList.add('collision-helper-header');
+        header.innerHTML = '<h3>Packet Stats</h3><button class="close-btn">&times;</button>';
+        header.querySelector('.close-btn').onclick = () => {
+            modal.remove();
+            this._packetStatsModalOpen = false;
+        };
+
+        let content = document.createElement('div');
+        content.classList.add('weekly-stats-content-body');
+        content.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">Loading packet stats...</p>';
+        modalContent.appendChild(header);
+        modalContent.appendChild(content);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        try {
+            const response = await fetch('api/v1/packet_stats/index.php');
+            if (!response.ok) {
+                if (response.status === 429) {
+                    const retryAfter = response.headers.get('Retry-After') || '60';
+                    throw new Error(`Rate limit exceeded. Try again in ${retryAfter}s.`);
+                }
+                throw new Error(`Failed to fetch packet stats: ${response.status}`);
+            }
+            const stats = await response.json();
+            content.innerHTML = '';
+
+            const pct = (count, total) => total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+            const diff = (thisW, lastW) => {
+                if (lastW === 0) return thisW > 0 ? '+100.0' : '0.0';
+                const change = ((thisW - lastW) / lastW) * 100;
+                return (change >= 0 ? '+' : '') + change.toFixed(1);
+            };
+            const diffColor = (thisW, lastW) => {
+                if (thisW > lastW) return '#4caf50';
+                if (thisW < lastW) return '#f44336';
+                return '#888';
+            };
+
+            // This Week Overview
+            const tw = stats.this_week;
+            const lw = stats.last_week;
+
+            let overviewSection = document.createElement('div');
+            overviewSection.classList.add('stats-section');
+            overviewSection.innerHTML = '<h4>This Week (last 7 days)</h4>';
+
+            let overviewTable = document.createElement('table');
+            overviewTable.classList.add('stats-table');
+            overviewTable.innerHTML = `
+                <thead><tr><th>Hash Size</th><th>Count</th><th>%</th><th>Last Week</th><th>Change</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><strong>1-byte</strong></td>
+                        <td>${tw['1-byte']}</td>
+                        <td>${pct(tw['1-byte'], tw.total)}%</td>
+                        <td>${lw['1-byte']}</td>
+                        <td style="color: ${diffColor(tw['1-byte'], lw['1-byte'])}">${diff(tw['1-byte'], lw['1-byte'])}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>2-byte</strong></td>
+                        <td>${tw['2-byte']}</td>
+                        <td>${pct(tw['2-byte'], tw.total)}%</td>
+                        <td>${lw['2-byte']}</td>
+                        <td style="color: ${diffColor(tw['2-byte'], lw['2-byte'])}">${diff(tw['2-byte'], lw['2-byte'])}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>3-byte</strong></td>
+                        <td>${tw['3-byte']}</td>
+                        <td>${pct(tw['3-byte'], tw.total)}%</td>
+                        <td>${lw['3-byte']}</td>
+                        <td style="color: ${diffColor(tw['3-byte'], lw['3-byte'])}">${diff(tw['3-byte'], lw['3-byte'])}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Direct (0-hop)</strong></td>
+                        <td>${tw['direct']}</td>
+                        <td>${pct(tw['direct'], tw.total)}%</td>
+                        <td>${lw['direct']}</td>
+                        <td style="color: ${diffColor(tw['direct'], lw['direct'])}">${diff(tw['direct'], lw['direct'])}%</td>
+                    </tr>
+                </tbody>
+            `;
+            overviewSection.appendChild(overviewTable);
+
+            let totalRow = document.createElement('div');
+            totalRow.classList.add('stats-total');
+            totalRow.innerHTML = `<strong>Total: ${tw.total}</strong> (last week: ${lw.total}, <span style="color: ${diffColor(tw.total, lw.total)}">${diff(tw.total, lw.total)}%</span>)`;
+            overviewSection.appendChild(totalRow);
+            content.appendChild(overviewSection);
+
+            // Breakdown by message type
+            const typeLabels = {
+                'advertisements': 'Advertisements',
+                'direct_messages': 'Direct Messages',
+                'channel_messages': 'Channel Messages'
+            };
+
+            let breakdownSection = document.createElement('div');
+            breakdownSection.classList.add('stats-section');
+            breakdownSection.innerHTML = '<h4>By Message Type (this week)</h4>';
+
+            let breakdownTable = document.createElement('table');
+            breakdownTable.classList.add('stats-table');
+            breakdownTable.innerHTML = '<thead><tr><th>Type</th><th>1-byte</th><th>2-byte</th><th>3-byte</th><th>Direct</th><th>Total</th></tr></thead>';
+
+            let breakdownBody = document.createElement('tbody');
+            for (const [table, label] of Object.entries(typeLabels)) {
+                const t = stats.by_type[table];
+                if (!t) continue;
+                let row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${label}</strong></td>
+                    <td>${t['1-byte']} (${pct(t['1-byte'], t.total)}%)</td>
+                    <td>${t['2-byte']} (${pct(t['2-byte'], t.total)}%)</td>
+                    <td>${t['3-byte']} (${pct(t['3-byte'], t.total)}%)</td>
+                    <td>${t['direct']} (${pct(t['direct'], t.total)}%)</td>
+                    <td style="color: #42a5f5;"><strong>${t.total}</strong></td>
+                `;
+                breakdownBody.appendChild(row);
+            }
+            breakdownTable.appendChild(breakdownBody);
+            breakdownSection.appendChild(breakdownTable);
+            content.appendChild(breakdownSection);
+
+        } catch (error) {
+            console.error('Error loading packet stats:', error);
+            content.innerHTML = `<p style="text-align: center; color: #f44; padding: 20px;">Error: ${error.message}</p>`;
+        } finally {
+            setTimeout(() => {
+                if (!document.body.contains(modal)) {
+                    this._packetStatsModalOpen = false;
+                }
+            }, 100);
+        }
+    }
+
     addMessage(msg) {
         // identified by date + hash
         const hash = msg.data.hash;
@@ -2831,11 +3100,11 @@ class MeshLog {
     }
 
     findContactByHash(hash) {
-        let pk = hash.length > 4;
+        let pk = hash.length > 6;
         for (const [_, contact] of Object.entries(this.contacts)) {
             if (pk && contact.data.public_key == hash) {
                 return contact;
-            } else if (contact.hash == hash) {
+            } else if (contact.hash3 == hash || contact.hash2 == hash || contact.hash == hash) {
                 return contact;
             }
         }
@@ -3246,10 +3515,30 @@ class MeshLog {
         }, 16); // ~60fps debounce
     }
 
+    // Detect path hash byte size from the path string (1, 2, or 3)
+    getPathHashSize(path) {
+        if (!path) return 1;
+        const first = path.split(',')[0];
+        if (!first) return 1;
+        if (first.length === 6) return 3;
+        if (first.length === 4) return 2;
+        return 1;
+    }
+
+    // Get the correct hash property from a contact based on hash byte size
+    getContactHash(contact, hashSize) {
+        if (hashSize === 3) return contact.hash3;
+        if (hashSize === 2) return contact.hash2;
+        return contact.hash;
+    }
+
     validatePath(hashes, src) {
         const pathNodes = [];
         const contacts = this.contacts;
-        
+
+        // Detect hash byte size from the first hash element
+        const hashSize = (hashes.length > 0 && hashes[0]) ? this.getPathHashSize(hashes.join(',')) : 1;
+
         // Build a stable cache key for this logical path + source
         const srcKey = src && src.data && src.data.public_key ? src.data.public_key : '';
         const pathKey = `${hashes.join(',')}|${srcKey}`;
@@ -3275,18 +3564,18 @@ class MeshLog {
             const hash = hashes[i];
             
             for (const v of Object.values(contacts)) {
-                if (v.hash === hash && v.adv && !v.adv.isExpired() && v.isRepeater()) {
+                if (this.getContactHash(v, hashSize) === hash && v.adv && !v.adv.isExpired() && v.isRepeater()) {
                     // Exclude repeaters with zero or missing coordinates
                     if (v.adv.data && v.adv.data.lat != 0 && v.adv.data.lon != 0) {
                         candidates.push(v);
                     }
                 }
             }
-            
+
             if (candidates.length === 0) continue;
-            
+
             let selectedNode = null;
-            
+
             if (candidates.length === 1) {
                 selectedNode = candidates[0];
             } else {
@@ -3297,7 +3586,7 @@ class MeshLog {
                         let minDistance = Infinity;
                         const srcLat = src.adv.data.lat;
                         const srcLon = src.adv.data.lon;
-                        
+
                         for (const candidate of candidates) {
                             const distance = this.calculateDistance(
                                 srcLat, srcLon,
@@ -3314,9 +3603,9 @@ class MeshLog {
                         if (hashes.length > 1) {
                             const secondHopCandidates = [];
                             const secondHash = hashes[1];
-                            
+
                             for (const v of Object.values(contacts)) {
-                                if (v.hash === secondHash && v.adv && !v.adv.isExpired() && v.isRepeater()) {
+                                if (this.getContactHash(v, hashSize) === secondHash && v.adv && !v.adv.isExpired() && v.isRepeater()) {
                                     // Exclude repeaters with zero or missing coordinates
                                     if (v.adv.data && v.adv.data.lat != 0 && v.adv.data.lon != 0) {
                                         secondHopCandidates.push(v);

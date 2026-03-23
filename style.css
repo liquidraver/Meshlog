@@ -111,6 +111,11 @@ html {
     flex-shrink: 0;
 }
 
+.hash-badge {
+    opacity: 0.6;
+    font-size: 0.9em;
+}
+
 .p {
     display: inline-block;
     width: 28px;
