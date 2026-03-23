@@ -11,8 +11,8 @@
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossorigin=""></script>
     <script src=" https://cdn.jsdelivr.net/npm/leaflet-polylineoffset@1.1.1/leaflet.polylineoffset.min.js "></script>
-    <script src="meshlog.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <script src="meshlog.js?v=<?= filemtime(__DIR__ . '/meshlog.js') ?>"></script>
+    <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . '/style.css') ?>">
     <title>EmpireMesh Log</title>
 </head>
 <body>

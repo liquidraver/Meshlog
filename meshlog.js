@@ -3022,7 +3022,7 @@ class MeshLog {
 
             let totalRow = document.createElement('div');
             totalRow.classList.add('stats-total');
-            totalRow.innerHTML = `<strong>Total: ${tw.total}</strong> (last week: ${lw.total}, <span style="color: ${diffColor(tw.total, lw.total)}">${diff(tw.total, lw.total)}%</span>)`;
+            totalRow.innerHTML = `<strong>Total: ${tw.total}</strong> <strong>(last week: ${lw.total}, <span style="color: ${diffColor(tw.total, lw.total)}">${diff(tw.total, lw.total)}%</span>)</strong>`;
             overviewSection.appendChild(totalRow);
             content.appendChild(overviewSection);
 
