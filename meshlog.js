@@ -513,7 +513,7 @@ class MeshLogContact extends MeshLogObject {
         const self = this;
 
         const sanitizedName = this._meshlog.sanitizeText(this.adv.data.name);
-        const sanitizedDate = this._meshlog.sanitizeText(this.adv.data.sent_at);
+        const sanitizedDate = this._meshlog.localizeTime(this.adv.data.sent_at);
         let tooltip = `<p class="tooltip-title">${sanitizedName}</p><p class="tooltip-detail">Last adv: ${sanitizedDate}</p>`;
 
         this.marker = L.marker([this.adv.data.lat, this.adv.data.lon], { icon: icon }).addTo(map);
@@ -569,7 +569,7 @@ class MeshLogContact extends MeshLogObject {
         }
 
         this.dom.name.innerText = this._meshlog.sanitizeText(this.adv.data.name);
-        this.dom.date.innerText = this._meshlog.sanitizeText(this.adv.data.sent_at);
+        this.dom.date.innerText = this._meshlog.localizeTime(this.adv.data.sent_at);
         this.dom.hash.innerText = `[${this._meshlog.validateHash(hashstr)}]`;
 
         if (this.highlight) {
@@ -681,7 +681,7 @@ class MeshLogGroupChild extends MeshLogObject {
 
     updateDom() {
         if (!this.dom) return;
-        this.dom.date.firstChild.textContent = this._meshlog.sanitizeText(this.data.sent_at);
+        this.dom.date.firstChild.textContent = this._meshlog.localizeTime(this.data.sent_at);
         if (this.data.path) {
             const hashSize = this._meshlog.getPathHashSize(this.data.path);
             this.dom.hashBadge.textContent = ` (${hashSize}-byte)`;
@@ -1116,7 +1116,7 @@ class MeshLogMessageGroup extends MeshLogObject {
         if (!msg) return;
 
         // Display timestamp as-is (server is already in CEST/UTC+2)
-        this.dom.date.firstChild.textContent = this._meshlog.sanitizeText(msg.data.sent_at);
+        this.dom.date.firstChild.textContent = this._meshlog.localizeTime(msg.data.sent_at);
         // Find best hash size across all reporters (prefer 1/2/3-byte over direct)
         let bestHashSize = 0;
         for (const m of Object.values(this.messages)) {
@@ -1271,9 +1271,9 @@ class MeshLogMessageGroup extends MeshLogObject {
         }
 
         // Hash size filter (uses bestHashSize computed above for badge)
-        if (!hidden) {
-            if (bestHashSize === 0 && !this._meshlog.settings.hash_sizes.direct) hidden = true;
-            else if (bestHashSize === 1 && !this._meshlog.settings.hash_sizes.byte_1) hidden = true;
+        // bestHashSize 0 = direct/zero-hop, not filtered (always shown)
+        if (!hidden && bestHashSize > 0) {
+            if (bestHashSize === 1 && !this._meshlog.settings.hash_sizes.byte_1) hidden = true;
             else if (bestHashSize === 2 && !this._meshlog.settings.hash_sizes.byte_2) hidden = true;
             else if (bestHashSize === 3 && !this._meshlog.settings.hash_sizes.byte_3) hidden = true;
         }
@@ -1473,7 +1473,6 @@ class MeshLog {
                 byte_1: true,
                 byte_2: true,
                 byte_3: true,
-                direct: true,
             },
             reporters: {
 
@@ -1559,6 +1558,15 @@ class MeshLog {
             };
             return escapeMap[match];
         });
+    }
+
+    // Convert a DB timestamp (stored in UTC) to the user's local timezone
+    localizeTime(dbTimestamp) {
+        if (!dbTimestamp || typeof dbTimestamp !== 'string') return '';
+        const date = new Date(dbTimestamp.replace(' ', 'T') + 'Z');
+        if (isNaN(date.getTime())) return dbTimestamp;
+        const pad = n => String(n).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     }
 
     sanitizeMessage(text) {
@@ -1914,18 +1922,6 @@ class MeshLog {
                 this.settings.hash_sizes.byte_3,
                 (e) => {
                     this.settings.hash_sizes.byte_3 = e.target.checked;
-                    self.__onTypesChanged(e);
-                }
-            )
-        );
-
-        channelControls.appendChild(
-            this.__createCb(
-                "Direct (0-hop)",
-                "assets/img/beacon.png",
-                this.settings.hash_sizes.direct,
-                (e) => {
-                    this.settings.hash_sizes.direct = e.target.checked;
                     self.__onTypesChanged(e);
                 }
             )
@@ -2963,7 +2959,7 @@ class MeshLog {
         document.body.appendChild(modal);
 
         try {
-            const response = await fetch('api/v1/packet_stats/index.php');
+            const response = await fetch('api/v1/packet_stats/index.php?fresh=1');
             if (!response.ok) {
                 if (response.status === 429) {
                     const retryAfter = response.headers.get('Retry-After') || '60';
@@ -3020,13 +3016,6 @@ class MeshLog {
                         <td>${lw['3-byte']}</td>
                         <td style="color: ${diffColor(tw['3-byte'], lw['3-byte'])}">${diff(tw['3-byte'], lw['3-byte'])}%</td>
                     </tr>
-                    <tr>
-                        <td><strong>Direct (0-hop)</strong></td>
-                        <td>${tw['direct']}</td>
-                        <td>${pct(tw['direct'], tw.total)}%</td>
-                        <td>${lw['direct']}</td>
-                        <td style="color: ${diffColor(tw['direct'], lw['direct'])}">${diff(tw['direct'], lw['direct'])}%</td>
-                    </tr>
                 </tbody>
             `;
             overviewSection.appendChild(overviewTable);
@@ -3040,7 +3029,6 @@ class MeshLog {
             // Breakdown by message type
             const typeLabels = {
                 'advertisements': 'Advertisements',
-                'direct_messages': 'Direct Messages',
                 'channel_messages': 'Channel Messages'
             };
 
@@ -3050,7 +3038,7 @@ class MeshLog {
 
             let breakdownTable = document.createElement('table');
             breakdownTable.classList.add('stats-table');
-            breakdownTable.innerHTML = '<thead><tr><th>Type</th><th>1-byte</th><th>2-byte</th><th>3-byte</th><th>Direct</th><th>Total</th></tr></thead>';
+            breakdownTable.innerHTML = '<thead><tr><th>Type</th><th>1-byte</th><th>2-byte</th><th>3-byte</th><th>Total</th></tr></thead>';
 
             let breakdownBody = document.createElement('tbody');
             for (const [table, label] of Object.entries(typeLabels)) {
@@ -3062,7 +3050,6 @@ class MeshLog {
                     <td>${t['1-byte']} (${pct(t['1-byte'], t.total)}%)</td>
                     <td>${t['2-byte']} (${pct(t['2-byte'], t.total)}%)</td>
                     <td>${t['3-byte']} (${pct(t['3-byte'], t.total)}%)</td>
-                    <td>${t['direct']} (${pct(t['direct'], t.total)}%)</td>
                     <td style="color: #42a5f5;"><strong>${t.total}</strong></td>
                 `;
                 breakdownBody.appendChild(row);
@@ -3370,7 +3357,7 @@ class MeshLog {
         const lastAdvRow = document.createElement('div');
         lastAdvRow.classList.add('node-info-row');
         if (contact.adv && contact.adv.data.sent_at) {
-            lastAdvRow.innerHTML = `<strong>Last Advertisement:</strong> <span>${this.sanitizeText(contact.adv.data.sent_at)}</span>`;
+            lastAdvRow.innerHTML = `<strong>Last Advertisement:</strong> <span>${this.localizeTime(contact.adv.data.sent_at)}</span>`;
         } else {
             lastAdvRow.innerHTML = `<strong>Last Advertisement:</strong> <span>Not available</span>`;
         }
@@ -3378,7 +3365,7 @@ class MeshLog {
         const createdRow = document.createElement('div');
         createdRow.classList.add('node-info-row');
         if (contact.data.created_at) {
-            createdRow.innerHTML = `<strong>First Seen:</strong> <span>${this.sanitizeText(contact.data.created_at)}</span>`;
+            createdRow.innerHTML = `<strong>First Seen:</strong> <span>${this.localizeTime(contact.data.created_at)}</span>`;
         }
 
         content.appendChild(nameRow);
@@ -3517,12 +3504,13 @@ class MeshLog {
 
     // Detect path hash byte size from the path string (1, 2, or 3)
     getPathHashSize(path) {
-        if (!path) return 1;
+        if (!path) return 0;
         const first = path.split(',')[0];
-        if (!first) return 1;
+        if (!first) return 0;
         if (first.length === 6) return 3;
         if (first.length === 4) return 2;
-        return 1;
+        if (first.length === 2) return 1;
+        return 0;
     }
 
     // Get the correct hash property from a contact based on hash byte size

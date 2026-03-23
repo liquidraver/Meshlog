@@ -10,8 +10,15 @@ class Utils {
             $seconds /= 1000;
         }
 
-        // Ensure we're using Hungarian timezone
-        date_default_timezone_set('Europe/Budapest');
+        date_default_timezone_set('UTC');
+
+        // Clamp future timestamps: if more than 5 minutes ahead, use server time
+        $now = time();
+        if ($seconds > $now + 300) {
+            $seconds = $now;
+            $msec = 0;
+        }
+
         return date("Y-m-d H:i:s", $seconds) . "." . str_pad($msec, 3, "0", STR_PAD_LEFT);
     }
 

@@ -6,7 +6,7 @@ include "../rate_limit.php";
 include "../cache.php";
 
 // Cache key based on current hour (cache for 10 minutes)
-$cacheKey = 'weekly_stats_' . date('Y-m-d-H');
+$cacheKey = 'weekly_stats_' . gmdate('Y-m-d-H');
 $cachedData = @getCached($cacheKey, 600);
 
 // Check cache FIRST - if we have cached data, return it without rate limiting
@@ -26,11 +26,10 @@ $pdo = openPdo();
 $pdo->setAttribute(PDO::ATTR_TIMEOUT, 15);
 $meshlog = new MeshLog($pdo);
 
-// Calculate date ranges for current week and previous week (UTC)
-date_default_timezone_set('UTC');
-$sevenDaysAgo = date('Y-m-d H:i:s', strtotime('-7 days'));
-$fourteenDaysAgo = date('Y-m-d H:i:s', strtotime('-14 days'));
-$now = date('Y-m-d H:i:s');
+$nowDt = new DateTime('now', new DateTimeZone('UTC'));
+$now = $nowDt->format('Y-m-d H:i:s');
+$sevenDaysAgo = (clone $nowDt)->modify('-7 days')->format('Y-m-d H:i:s');
+$fourteenDaysAgo = (clone $nowDt)->modify('-14 days')->format('Y-m-d H:i:s');
 
 $stats = array();
 $days = 7;
@@ -333,7 +332,7 @@ $stats['direct_messages_avg_per_day'] = round($currentDmTotal / $days);
 $stats['direct_messages_diff'] = $currentDmTotal - $previousDmTotal;
 $stats['direct_messages_diff_avg_per_day'] = round($stats['direct_messages_diff'] / $days);
 
-// Add date range info (UTC timestamps, will be converted to local time in frontend)
+// Add date range info
 $stats['date_range'] = array(
     'from' => $sevenDaysAgo,
     'to' => $now,

@@ -6,7 +6,7 @@ include "../rate_limit.php";
 include "../cache.php";
 
 // Cache for 1 minute only (since we're using database country_code, query is fast)
-$cacheKey = 'node_stats_' . date('Y-m-d-H-i');
+$cacheKey = 'node_stats_' . gmdate('Y-m-d-H-i');
 $cachedData = @getCached($cacheKey, 60);
 
 // Check cache FIRST - if we have cached data, return it without rate limiting
@@ -25,11 +25,14 @@ $pdo = openPdo();
 $pdo->setAttribute(PDO::ATTR_TIMEOUT, 15);
 $meshlog = new MeshLog($pdo);
 
+$nowDt = new DateTime('now', new DateTimeZone('UTC'));
+$sevenDaysAgo = (clone $nowDt)->modify('-7 days')->format('Y-m-d H:i:s');
+
 // Get unique contacts with their latest advertisement in the last 7 days
 // This ensures we count each node only once, using its most recent advertisement
 // Include all nodes, even those without country_code
 $query = $pdo->prepare("
-    SELECT 
+    SELECT
         a.contact_id,
         a.country_code,
         a.type,
@@ -39,12 +42,14 @@ $query = $pdo->prepare("
         SELECT contact_id, MAX(sent_at) as max_sent_at
         FROM advertisements
         WHERE lat != 0 AND lon != 0
-        AND sent_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        AND sent_at >= :since1
         GROUP BY contact_id
     ) latest ON a.contact_id = latest.contact_id AND a.sent_at = latest.max_sent_at
     WHERE a.lat != 0 AND a.lon != 0
-    AND a.sent_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    AND a.sent_at >= :since2
 ");
+$query->bindParam(':since1', $sevenDaysAgo, PDO::PARAM_STR);
+$query->bindParam(':since2', $sevenDaysAgo, PDO::PARAM_STR);
 $query->execute();
 $nodes = $query->fetchAll(PDO::FETCH_ASSOC);
 

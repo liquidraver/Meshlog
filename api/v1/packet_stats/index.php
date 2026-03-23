@@ -5,15 +5,18 @@ include "../utils.php";
 include "../rate_limit.php";
 include "../cache.php";
 
-// Cache for 5 minutes
+// Cache for 5 minutes (skip cache with ?fresh=1)
+$skipCache = isset($_GET['fresh']) && $_GET['fresh'] == '1';
 $cacheKey = 'packet_stats_' . floor(time() / 300);
-$cachedData = @getCached($cacheKey, 300);
 
-if ($cachedData !== false && isset($cachedData['data'])) {
-    header('Content-Type: application/json; charset=utf-8');
-    header('X-Cache: HIT');
-    echo json_encode($cachedData['data'], JSON_PRETTY_PRINT);
-    exit;
+if (!$skipCache) {
+    $cachedData = @getCached($cacheKey, 300);
+    if ($cachedData !== false && isset($cachedData['data'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        header('X-Cache: HIT');
+        echo json_encode($cachedData['data'], JSON_PRETTY_PRINT);
+        exit;
+    }
 }
 
 @checkRateLimit(30, 60);
@@ -33,38 +36,38 @@ function getPathHashSize($path) {
     return 0; // unknown
 }
 
-// Count packets by hash size for a given time range
+// Count packets by hash size for a given time range (only packets with paths)
 function countByHashSize($pdo, $table, $startDate, $endDate) {
-    $counts = array('1-byte' => 0, '2-byte' => 0, '3-byte' => 0, 'direct' => 0, 'total' => 0);
+    $counts = array('1-byte' => 0, '2-byte' => 0, '3-byte' => 0, 'total' => 0);
 
-    $query = $pdo->prepare("SELECT path FROM $table WHERE sent_at >= :start AND sent_at < :end");
+    $query = $pdo->prepare("SELECT path FROM $table WHERE sent_at >= :start AND sent_at < :end AND path IS NOT NULL AND path != ''");
     $query->bindParam(':start', $startDate, PDO::PARAM_STR);
     $query->bindParam(':end', $endDate, PDO::PARAM_STR);
     $query->execute();
 
     while ($row = $query->fetch(PDO::FETCH_ASSOC)) {
         $size = getPathHashSize($row['path']);
+        if ($size === 0) continue; // skip unrecognized
         $counts['total']++;
         switch ($size) {
             case 1: $counts['1-byte']++; break;
             case 2: $counts['2-byte']++; break;
             case 3: $counts['3-byte']++; break;
-            default: $counts['direct']++; break;
         }
     }
 
     return $counts;
 }
 
-$now = new DateTime();
+$now = new DateTime('now', new DateTimeZone('UTC'));
 $thisWeekEnd = $now->format('Y-m-d H:i:s');
 $thisWeekStart = (clone $now)->modify('-7 days')->format('Y-m-d H:i:s');
 $lastWeekStart = (clone $now)->modify('-14 days')->format('Y-m-d H:i:s');
 
-$tables = array('advertisements', 'direct_messages', 'channel_messages');
+$tables = array('advertisements', 'channel_messages');
 
-$thisWeek = array('1-byte' => 0, '2-byte' => 0, '3-byte' => 0, 'direct' => 0, 'total' => 0);
-$lastWeek = array('1-byte' => 0, '2-byte' => 0, '3-byte' => 0, 'direct' => 0, 'total' => 0);
+$thisWeek = array('1-byte' => 0, '2-byte' => 0, '3-byte' => 0, 'total' => 0);
+$lastWeek = array('1-byte' => 0, '2-byte' => 0, '3-byte' => 0, 'total' => 0);
 
 foreach ($tables as $table) {
     $tw = countByHashSize($pdo, $table, $thisWeekStart, $thisWeekEnd);
