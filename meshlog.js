@@ -1949,6 +1949,13 @@ class MeshLog {
             return;
         }
         
+        // Channels separator
+        let channelsLabel = document.createElement('div');
+        channelsLabel.style.cssText = 'color: #888; font-size: 11px; margin-top: 6px; border-top: 1px solid #444; padding-top: 6px;';
+        channelsLabel.textContent = 'Channels';
+        channelsLabel.classList.add('channel-filter');
+        this.dom_channel_controls.appendChild(channelsLabel);
+
         Object.entries(this.channels).forEach(([id, channel]) => {
             if (!channel || !channel.data) {
                 return;
