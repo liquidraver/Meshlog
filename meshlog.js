@@ -73,7 +73,7 @@ class MeshLogObject {
     merge(data) {
         // App shouldn't change data. It is updated on new advertisements
         this.data = {...this.data, ...data};
-        this.time = new Date(data.created_at).getTime();
+        this.time = data.created_at ? new Date(data.created_at.replace(' ', 'T') + 'Z').getTime() : 0;
     }
 
     createDom(root) {}
@@ -704,19 +704,15 @@ class MeshLogAdvertisement extends MeshLogGroupChild {
     pathTag() { return 'a'; }
 
     isExpired() {
-        let now = new Date();
-        let seen = new Date(this.data.sent_at);
-
-        let age = now.getTime() - seen.getTime();
-        return age > (3 * 24 * 60 * 60 * 1000);
+        let now = Date.now();
+        let seen = this.data.sent_at ? new Date(this.data.sent_at.replace(' ', 'T') + 'Z').getTime() : 0;
+        return (now - seen) > (3 * 24 * 60 * 60 * 1000);
     }
 
     isVeryExpired() {
-        let now = new Date();
-        let seen = new Date(this.data.sent_at);
-
-        let age = now.getTime() - seen.getTime();
-        return age > (7 * 24 * 60 * 60 * 1000);
+        let now = Date.now();
+        let seen = this.data.sent_at ? new Date(this.data.sent_at.replace(' ', 'T') + 'Z').getTime() : 0;
+        return (now - seen) > (7 * 24 * 60 * 60 * 1000);
     }
 }
 
@@ -1146,8 +1142,9 @@ class MeshLogMessageGroup extends MeshLogObject {
             
             if (nodeInternalTime && serverCreatedAt) {
                 try {
-                    const nodeTime = new Date(nodeInternalTime).getTime();
-                    const serverTime = new Date(serverCreatedAt).getTime();
+                    // Append Z to parse as UTC (DB stores UTC without timezone suffix)
+                    const nodeTime = new Date(nodeInternalTime.replace(' ', 'T') + 'Z').getTime();
+                    const serverTime = new Date(serverCreatedAt.replace(' ', 'T') + 'Z').getTime();
                     if (!isNaN(nodeTime) && !isNaN(serverTime) && nodeTime > 0 && serverTime > 0) {
                         const diffMs = Math.abs(serverTime - nodeTime);
                         const diffMinutes = diffMs / (1000 * 60);
@@ -1561,10 +1558,16 @@ class MeshLog {
     }
 
     // Convert a DB timestamp (stored in UTC) to the user's local timezone
-    localizeTime(dbTimestamp) {
-        if (!dbTimestamp || typeof dbTimestamp !== 'string') return '';
+    // Parse a DB timestamp (stored as UTC without timezone suffix) into a Date object
+    parseUTCDate(dbTimestamp) {
+        if (!dbTimestamp || typeof dbTimestamp !== 'string') return null;
         const date = new Date(dbTimestamp.replace(' ', 'T') + 'Z');
-        if (isNaN(date.getTime())) return dbTimestamp;
+        return isNaN(date.getTime()) ? null : date;
+    }
+
+    localizeTime(dbTimestamp) {
+        const date = this.parseUTCDate(dbTimestamp);
+        if (!date) return dbTimestamp || '';
         const pad = n => String(n).padStart(2, '0');
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     }
@@ -2035,7 +2038,7 @@ class MeshLog {
                 const reporterId = msg.data.reporter_id;
                 // Use sent_at (when message was sent) or created_at as fallback
                 const timeStr = msg.data.sent_at || msg.data.created_at;
-                const reportTime = timeStr ? new Date(timeStr).getTime() : 0;
+                const reportTime = timeStr ? new Date(timeStr.replace(' ', 'T') + 'Z').getTime() : 0;
                 if (reportTime > 0 && (!reporterLastReport[reporterId] || reportTime > reporterLastReport[reporterId])) {
                     reporterLastReport[reporterId] = reportTime;
                 }
@@ -2048,7 +2051,7 @@ class MeshLog {
                 const reporterId = msg.data.reporter_id;
                 // Use sent_at (when message was sent) or created_at as fallback
                 const timeStr = msg.data.sent_at || msg.data.created_at;
-                const reportTime = timeStr ? new Date(timeStr).getTime() : 0;
+                const reportTime = timeStr ? new Date(timeStr.replace(' ', 'T') + 'Z').getTime() : 0;
                 if (reportTime > 0 && (!reporterLastReport[reporterId] || reportTime > reporterLastReport[reporterId])) {
                     reporterLastReport[reporterId] = reportTime;
                 }
@@ -2061,7 +2064,7 @@ class MeshLog {
                 const reporterId = msg.data.reporter_id;
                 // Use sent_at (when message was sent) or created_at as fallback
                 const timeStr = msg.data.sent_at || msg.data.created_at;
-                const reportTime = timeStr ? new Date(timeStr).getTime() : 0;
+                const reportTime = timeStr ? new Date(timeStr.replace(' ', 'T') + 'Z').getTime() : 0;
                 if (reportTime > 0 && (!reporterLastReport[reporterId] || reportTime > reporterLastReport[reporterId])) {
                     reporterLastReport[reporterId] = reportTime;
                 }
@@ -2225,7 +2228,7 @@ class MeshLog {
             this.__addObject(dataset, id, obj);
 
             if (o.created_at) {
-                let created_at = new Date(o.created_at).getTime();
+                let created_at = new Date(o.created_at.replace(' ', 'T') + 'Z').getTime();
                 if (created_at != 0) {
                     if (created_at > this.latest) {
                         this.latest = created_at;
@@ -2251,17 +2254,17 @@ class MeshLog {
         let oldest_dm  = this.latest;
 
         Object.entries(this.advertisements).forEach(([k,v]) => {
-            let created_at = new Date(v.data.created_at).getTime();
+            let created_at = new Date(v.data.created_at.replace(' ', 'T') + 'Z').getTime();
             oldest_adv = Math.min(oldest_adv, created_at);
         });
 
         Object.entries(this.channel_messages).forEach(([k,v]) => {
-            let created_at = new Date(v.data.created_at).getTime();
+            let created_at = new Date(v.data.created_at.replace(' ', 'T') + 'Z').getTime();
             oldest_grp = Math.min(oldest_grp, created_at);
         });
 
         Object.entries(this.direct_messages).forEach(([k,v]) => {
-            let created_at = new Date(v.data.created_at).getTime();
+            let created_at = new Date(v.data.created_at.replace(' ', 'T') + 'Z').getTime();
             oldest_dm = Math.min(oldest_dm, created_at);
         });
 
